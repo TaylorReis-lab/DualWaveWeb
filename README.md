@@ -95,7 +95,10 @@ dualwave/
 │       ├── syncService.ts      # Camada de serviço (lógica de negócio, queries, sync)
 │       └── mockData.ts         # Dados ricos de demonstração (playlists e faixas padrão)
 ├── public/                     # Assets estáticos
-├── drizzle.config.json         # Configuração Drizzle Kit
+├── drizzle.config.ts           # Drizzle Kit usando DATABASE_URL do .env
+├── drizzle/                     # Migrations versionadas (geradas pelo Drizzle Kit)
+├── scripts/
+│   └── dev-smoke-test.mjs       # Testes HTTP isolados para o desenvolvedor
 ├── next.config.ts
 ├── tsconfig.json
 └── package.json
@@ -108,7 +111,11 @@ dualwave/
 - `playlists` — playlists de cada plataforma + playlists **híbridas**
 - `tracks` — faixas individuais, sempre associadas a uma plataforma de origem
 - `search_history` — histórico de buscas do usuário
-- `app_settings` — preferências do usuário
+- `app_settings` — preferências do usuário e credenciais do Console Dev
+
+O schema está pré-configurado em `src/db/schema.ts`: inclui chaves estrangeiras com exclusão em cascata, índices para as consultas mais frequentes, uma conta por serviço por sessão, IDs externos de playlist únicos por serviço e checks para plataformas, estados de sincronização, categorias e valores não negativos. A configuração `drizzle.config.ts` lê `DATABASE_URL` do `.env`.
+
+Para aplicar/atualizar o schema local: `npx drizzle-kit push`. Para gerar migrations versionadas para revisão: `npx drizzle-kit generate`.
 
 ---
 
@@ -134,19 +141,21 @@ npm install
 # Verifique se o arquivo .env contém:
 # DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/app_db
 
-# 4. Aplique o schema do Drizzle no PostgreSQL
+# 4. Aplique o schema pré-configurado no PostgreSQL local
 npx drizzle-kit push
+# Alternativa em banco novo usando a migration versionada:
+# npx drizzle-kit migrate
 
-# 5. (Opcional) Para login OAuth real, adicione as credenciais ao .env:
-# SPOTIFY_CLIENT_ID=seu_client_id
-# SPOTIFY_CLIENT_SECRET=seu_client_secret
-# GOOGLE_CLIENT_ID=seu_google_client_id
-# GOOGLE_CLIENT_SECRET=seu_google_client_secret
+# 5. (Opcional) Para login OAuth real, configure as credenciais no .env
+# ou no Console Dev em http://localhost:3000/dev
 
 # 6. Rode em modo desenvolvimento
 npm run dev
 
-# 7. Build de produção
+# 7. Em outro terminal, rode os testes de integração locais
+node scripts/dev-smoke-test.mjs
+
+# 8. Build de produção
 npm run build && npm start
 ```
 
@@ -188,6 +197,30 @@ Quando o usuário clica em **"Entrar com Login Spotify Oficial"** ou **"Entrar c
 
 ---
 
+## 👤 Contas DualWave (login com e-mail e senha)
+
+Usuários normais podem **criar uma conta** (botão "Entrar / Criar conta" na navbar) e **entrar com e-mail + senha**:
+
+- A senha é armazenada com hash seguro (scrypt) — nunca em texto puro.
+- Os logins do **Spotify e do YouTube ficam salvos no servidor vinculados à conta** (tokens, IDs, playlists e faixas), não só no navegador.
+- Dados criados como visitante anônimo são **migrados automaticamente** para a conta no primeiro login, sem duplicar playlists.
+- **Ao entrar, o servidor verifica automaticamente se os tokens expiraram** e os renova via refresh token — a interface mostra "renovado" e o estado de cada token (válido, expirando, expirado, demo).
+- Sair da conta mantém tudo salvo no servidor; entrar de novo restaura tudo.
+
+**Conta de desenvolvedor:** no registro, informe o código dev (`DEV_SIGNUP_CODE`, padrão `dualwave-dev`) para criar uma conta `dev`. Ela abre com os logins de demonstração já presentes, exibe o selo DEV na navbar e destaca o acesso ao Console Dev.
+
+Rotas:
+
+| Método | Rota | O que faz |
+|---|---|---|
+| `POST` | `/api/auth/register` | `{email, password, displayName?, devCode?}` → cria a conta, loga, migra dados, renova tokens |
+| `POST` | `/api/auth/login` | `{email, password}` → entra, migra dados pendentes e renova tokens expirados |
+| `POST` | `/api/auth/logout` | Sai da conta (dados permanecem no servidor) |
+| `GET` | `/api/auth/me` | Usuário atual + renovação automática dos tokens + saúde dos tokens |
+| `GET` | `/api/auth/status` | Contas Spotify/YouTube + usuário + saúde dos tokens (somente leitura) |
+
+---
+
 ## 🧪 Console Dev (`/dev`) — gravar dados no banco local
 
 Página e rotas exclusivas para desenvolvimento, pensadas para testar sem depender do fluxo OAuth completo.
@@ -198,6 +231,7 @@ Desative em produção com `DISABLE_DEV_CONSOLE=true`.
 Acesse **`/dev`** (ou clique no ícone de terminal na navbar) para:
 
 - Ver o estado do banco local (contagens de sessões, contas, playlists, faixas e buscas)
+- **Ver os desenvolvedores logados** (login dev necessário): nome, e-mail, sessões abertas, último login, última atividade e validade, com busca e atualização a cada 30 segundos. Logout e expiração removem sessões; atividade recente não significa presença online garantida.
 - Ver a `DATABASE_URL` mascarada e o `NODE_ENV`
 - **Gravar credenciais OAuth no banco** (Spotify/Google/YouTube API Key) sem editar `.env` nem reiniciar
 - Copiar os Redirect URIs exatos com um clique
@@ -205,10 +239,19 @@ Acesse **`/dev`** (ou clique no ícone de terminal na navbar) para:
 - **Sincronizar com um token colado manualmente** (sem passar pelo OAuth)
 - Fazer seed de demonstração, inserir faixas/playlists avulsas, curtir, limpar por plataforma, zerar sessão ou zerar o banco inteiro
 
+### Arquivo separado de testes do desenvolvedor
+
+Execute `node scripts/dev-smoke-test.mjs` com `npm run dev` ativo. O script usa uma sessão isolada e verifica health check, acesso ao banco, seed demo, IDs das contas, busca combinada, filtros Spotify/YouTube, detalhe de playlist, criação híbrida, likes, registro/login/logout de conta dev, migração de dados e saúde dos tokens. Ao terminar, remove o usuário de teste e somente a sessão temporária; não usa tokens OAuth nem executa `wipe-all`.
+
+Para testar outro endereço: `DUALWAVE_URL=http://localhost:3001 node scripts/dev-smoke-test.mjs`.
+
+O teste adicional `node scripts/dev-users-test.mjs` cobre permissões da lista de devs, múltiplas sessões, logout, privacidade do retorno, favicon e créditos. Ele cria e remove somente contas fictícias. Caso personalize `DEV_SIGNUP_CODE`, forneça o mesmo valor ao executar esse teste.
+
 ### Rotas HTTP
 
 | Método | Rota | O que faz |
 |---|---|---|
+| `GET` | `/api/dev/users` | Lista devs com sessões não expiradas. Requer login com `role=dev`; nunca retorna senhas ou tokens |
 | `GET` | `/api/dev/db?limit=60` | Inspeciona o banco local (totais, contas com IDs reais, playlists, faixas, buscas) |
 | `POST` | `/api/dev/db` | `{action: "seed-demo" \| "insert-track" \| "insert-playlist" \| "clear-platform" \| "wipe-session" \| "wipe-all" \| "toggle-like"}` |
 | `GET` | `/api/dev/credentials` | Mostra credenciais ativas (mascaradas), origem dos valores (`env`/`db`) e Redirect URIs |
@@ -287,7 +330,15 @@ Distribuído sob a licença **MIT**. Veja o arquivo `LICENSE` para mais detalhes
 
 ## 👥 Créditos
 
-Veja [`CREDITS.md`](./CREDITS.md) para a lista completa de créditos, menções e agradecimentos.
+**Desenvolvedor principal e mantenedor: Taylor Reis.**
+
+- GitHub: [@TaylorReis-lab](https://github.com/TaylorReis-lab)
+- E-mail: [taylor-reis@outlook.com](mailto:taylor-reis@outlook.com)
+- Website: [taylorreis.netlify.app](https://taylorreis.netlify.app)
+
+Os créditos e contribuidores também aparecem no site em **`/creditos`**, acessível pelos rodapés do app e do Console Dev. Para atualizar a identidade pública ou adicionar um contribuidor confirmado, edite `src/lib/project.ts` e mantenha [`CREDITS.md`](./CREDITS.md) alinhado.
+
+O favicon próprio do DualWave está em `src/app/icon.svg`, com versões `favicon.ico` (16/32/48 px) e `apple-icon.png` (180 px) reconhecidas automaticamente pelo Next.js.
 
 ---
 

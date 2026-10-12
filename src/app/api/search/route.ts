@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
 import { getSessionId } from "@/lib/session";
-import { searchTracksAndPlaylists } from "@/lib/syncService";
+import { ensureSession, searchTracksAndPlaylists } from "@/lib/syncService";
 import { db } from "@/db";
 import { searchHistory } from "@/db/schema";
 
 export async function GET(req: Request) {
   try {
     const sessionId = await getSessionId();
+    await ensureSession(sessionId);
     const url = new URL(req.url);
     const query = url.searchParams.get("q") || "";
     const platform = (url.searchParams.get("platform") || "all") as "all" | "spotify" | "youtube";

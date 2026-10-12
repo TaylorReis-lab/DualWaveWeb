@@ -62,7 +62,9 @@ export async function GET(req: Request) {
     }
 
     // 2) Sincronização completa (canal + playlists + curtidas + faixas com duração real)
-    const report = await syncYoutubeAccount(sessionId, tokenData.access_token, tokenData.refresh_token ?? null);
+    const report = await syncYoutubeAccount(sessionId, tokenData.access_token, tokenData.refresh_token ?? null, {
+      expiresInSeconds: Number(tokenData.expires_in) || 3600,
+    });
 
     if (report.warnings.length > 0) {
       await db

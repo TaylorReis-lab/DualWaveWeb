@@ -187,12 +187,18 @@ export async function syncSpotifyAccount(
   sessionId: string,
   accessToken: string,
   refreshToken: string | null,
-  opts?: { autoMatchYoutube?: boolean; youtubeApiKey?: string | null; maxTracksPerPlaylist?: number }
+  opts?: {
+    autoMatchYoutube?: boolean;
+    youtubeApiKey?: string | null;
+    maxTracksPerPlaylist?: number;
+    expiresInSeconds?: number;
+  }
 ): Promise<SyncReport> {
   await ensureSession(sessionId);
   const warnings: string[] = [];
   const autoMatch = opts?.autoMatchYoutube ?? true;
   const maxPerPlaylist = opts?.maxTracksPerPlaylist ?? 100;
+  const expiresInSeconds = opts?.expiresInSeconds && opts.expiresInSeconds > 0 ? opts.expiresInSeconds : 3600;
 
   // 1. Perfil do usuário — aqui pegamos o ID real da conta Spotify
   const me = await spotifyFetch("/me", accessToken, warnings);
@@ -208,7 +214,7 @@ export async function syncSpotifyAccount(
     avatarUrl: me.images?.[0]?.url ?? null,
     accessToken,
     refreshToken,
-    expiresAt: new Date(Date.now() + 3600 * 1000),
+    expiresAt: new Date(Date.now() + expiresInSeconds * 1000),
     scopes: me.scopes ?? null,
     product: me.product ?? null,
     country: me.country ?? null,
@@ -392,7 +398,8 @@ async function ytFetch(path: string, token: string, warnings: string[]): Promise
 export async function syncYoutubeAccount(
   sessionId: string,
   accessToken: string,
-  refreshToken: string | null
+  refreshToken: string | null,
+  opts?: { expiresInSeconds?: number }
 ): Promise<SyncReport> {
   await ensureSession(sessionId);
   const warnings: string[] = [];
@@ -428,6 +435,9 @@ export async function syncYoutubeAccount(
     throw new Error("Não foi possível obter o channelId do YouTube. Autorize o escopo youtube.readonly.");
   }
 
+  const youtubeExpiresIn =
+    opts?.expiresInSeconds && opts.expiresInSeconds > 0 ? opts.expiresInSeconds : 3600;
+
   await upsertAccount(sessionId, "youtube", {
     accountId: channelId,
     displayName,
@@ -435,7 +445,7 @@ export async function syncYoutubeAccount(
     avatarUrl,
     accessToken,
     refreshToken,
-    expiresAt: new Date(Date.now() + 3600 * 1000),
+    expiresAt: new Date(Date.now() + youtubeExpiresIn * 1000),
     scopes: "https://www.googleapis.com/auth/youtube.readonly",
     followers: Number(channel?.statistics?.subscriberCount ?? 0),
     rawProfile: { channel, googleProfile: profile },

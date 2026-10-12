@@ -1,6 +1,8 @@
 "use client";
 
 import React, { useCallback, useEffect, useState } from "react";
+import { DevUsersPanel } from "@/components/DevUsersPanel";
+import { SiteCredits } from "@/components/SiteCredits";
 import {
   Terminal,
   KeyRound,
@@ -73,6 +75,7 @@ export default function DevConsolePage() {
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState<{ kind: "ok" | "err" | "warn"; msg: string } | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  const [devUsersRefreshKey, setDevUsersRefreshKey] = useState(0);
 
   // Formulários
   const [credForm, setCredForm] = useState({
@@ -112,6 +115,7 @@ export default function DevConsolePage() {
 
   const loadAll = useCallback(async () => {
     setLoading(true);
+    setDevUsersRefreshKey((value) => value + 1);
     try {
       const [dbRes, credRes] = await Promise.all([fetch("/api/dev/db?limit=60"), fetch("/api/dev/credentials")]);
       if (dbRes.status === 403) {
@@ -407,6 +411,8 @@ export default function DevConsolePage() {
             </button>
           </div>
         </section>
+
+        <DevUsersPanel refreshKey={devUsersRefreshKey} onAuthenticated={() => void loadAll()} />
 
         {/* 2. Credenciais OAuth */}
         <section className="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-5 space-y-4">
@@ -832,9 +838,12 @@ export default function DevConsolePage() {
           </div>
         </section>
 
-        <footer className="text-center text-[11px] text-zinc-600 py-6">
-          Console Dev do DualWave · dados gravados no PostgreSQL local ({dump?.databaseUrl || "..."}) ·{" "}
-          <a href="/" className="text-emerald-400 hover:underline">voltar ao app</a>
+        <footer className="text-center text-[11px] text-zinc-600 py-6 space-y-5">
+          <p>
+            Console Dev do DualWave · dados gravados no PostgreSQL local ({dump?.databaseUrl || "..."}) ·{" "}
+            <a href="/" className="text-emerald-400 hover:underline">voltar ao app</a>
+          </p>
+          <SiteCredits />
         </footer>
       </div>
     </main>

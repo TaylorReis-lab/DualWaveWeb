@@ -76,6 +76,7 @@ export async function GET(req: Request) {
     const report = await syncSpotifyAccount(sessionId, tokenData.access_token, tokenData.refresh_token ?? null, {
       autoMatchYoutube: true,
       youtubeApiKey: creds.youtubeApiKey,
+      expiresInSeconds: Number(tokenData.expires_in) || 3600,
     });
 
     // 3) Registra avisos não-fatais para inspeção no Console Dev

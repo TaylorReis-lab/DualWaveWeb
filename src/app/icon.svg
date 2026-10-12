@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none">
+  <title>DualWave</title>
+  <defs>
+    <linearGradient id="dualwave-ring" x1="9" y1="9" x2="55" y2="55" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#34d399"/>
+      <stop offset=".42" stop-color="#10b981"/>
+      <stop offset="1" stop-color="#fb7185"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="16" fill="#09090b"/>
+  <circle cx="32" cy="32" r="23" stroke="url(#dualwave-ring)" stroke-width="5"/>
+  <rect x="17" y="26" width="4" height="12" rx="2" fill="#6ee7b7"/>
+  <rect x="24" y="21" width="4" height="22" rx="2" fill="#ecfdf5"/>
+  <rect x="31" y="25" width="4" height="14" rx="2" fill="#ecfdf5"/>
+  <path d="M40 24.75C40 24.17 40.65 23.83 41.12 24.16L51.08 31.41C51.47 31.7 51.47 32.3 51.08 32.59L41.12 39.84C40.65 40.17 40 39.83 40 39.25V24.75Z" fill="#fb7185"/>
+</svg>

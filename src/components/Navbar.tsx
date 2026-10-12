@@ -1,7 +1,8 @@
 "use client";
 
 import React from "react";
-import { Search, Music, Radio, Disc3, Plus, Settings, CheckCircle2, AlertCircle, LogOut, Terminal } from "lucide-react";
+import { Search, Disc3, Plus, Settings, CheckCircle2, Radio, Terminal, User, LogOut } from "lucide-react";
+import type { AuthUser } from "./AuthModal";
 
 interface NavbarProps {
   activeTab: "home" | "library" | "search" | "liked";
@@ -14,6 +15,9 @@ interface NavbarProps {
     bothConnected: boolean;
     anyConnected: boolean;
   } | null;
+  user: AuthUser | null;
+  onOpenAuthModal: () => void;
+  onLogout: () => void;
   onOpenConnectModal: () => void;
   onOpenHybridModal: () => void;
   onOpenSettings: () => void;
@@ -25,6 +29,9 @@ export function Navbar({
   searchQuery,
   setSearchQuery,
   accounts,
+  user,
+  onOpenAuthModal,
+  onLogout,
   onOpenConnectModal,
   onOpenHybridModal,
   onOpenSettings,
@@ -110,7 +117,7 @@ export function Navbar({
           {/* Connect / Status Button */}
           <button
             onClick={onOpenConnectModal}
-            className={`px-3 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1.5 transition-all ${
+            className={`px-3 py-1.5 rounded-full text-xs font-semibold hidden sm:flex items-center gap-1.5 transition-all ${
               accounts?.bothConnected
                 ? "bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700"
                 : "bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-950/40"
@@ -119,7 +126,7 @@ export function Navbar({
             {accounts?.bothConnected ? (
               <>
                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                <span className="hidden sm:inline">2 Contas Ativas</span>
+                <span className="hidden lg:inline">2 Contas Ativas</span>
               </>
             ) : (
               <>
@@ -129,10 +136,53 @@ export function Navbar({
             )}
           </button>
 
-          {/* Console Dev */}
+          {/* Account: login / user chip */}
+          {user ? (
+            <div className="flex items-center gap-1.5 bg-zinc-900 border border-zinc-700 rounded-full pl-1 pr-1 py-1">
+              <div
+                className="flex items-center gap-1.5 pl-1.5 pr-1"
+                title={`${user.email}${user.role === "dev" ? " • desenvolvedor" : ""}`}
+              >
+                <span className="w-6 h-6 rounded-full bg-gradient-to-br from-emerald-500 to-rose-600 flex items-center justify-center text-[11px] font-black text-white">
+                  {(user.displayName || user.email).charAt(0).toUpperCase()}
+                </span>
+                <span className="text-xs font-semibold text-white max-w-24 truncate hidden md:inline">
+                  {user.displayName}
+                </span>
+                {user.role === "dev" && (
+                  <span className="text-[9px] font-black uppercase px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/30">
+                    Dev
+                  </span>
+                )}
+              </div>
+              <button
+                onClick={onLogout}
+                className="p-1.5 text-zinc-400 hover:text-rose-400 hover:bg-zinc-800 rounded-full transition-colors"
+                title="Sair da conta"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={onOpenAuthModal}
+              className="px-3 py-1.5 rounded-full text-xs font-bold bg-white hover:bg-zinc-200 text-black flex items-center gap-1.5 transition-all shadow"
+              title="Entrar ou criar sua conta para salvar no servidor"
+            >
+              <User className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Entrar / Criar conta</span>
+              <span className="sm:hidden">Entrar</span>
+            </button>
+          )}
+
+          {/* Console Dev (destaque para devs) */}
           <a
             href="/dev"
-            className="hidden sm:flex p-2 text-zinc-400 hover:text-emerald-400 bg-zinc-900 border border-zinc-800 hover:border-emerald-700/60 rounded-full transition-colors"
+            className={`hidden sm:flex p-2 rounded-full transition-colors border ${
+              user?.role === "dev"
+                ? "text-amber-400 bg-amber-500/10 border-amber-500/30 hover:bg-amber-500/20"
+                : "text-zinc-400 hover:text-emerald-400 bg-zinc-900 border-zinc-800 hover:border-emerald-700/60"
+            }`}
             title="Console Dev (credenciais + dados no banco local)"
           >
             <Terminal className="w-4 h-4" />

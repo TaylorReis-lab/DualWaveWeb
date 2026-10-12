@@ -3,6 +3,8 @@ import { sql } from "drizzle-orm";
 import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import {
+  appSettings,
+  appUsers,
   connectedAccounts,
   playlists,
   searchHistory,
@@ -10,8 +12,8 @@ import {
   userSessions,
 } from "@/db/schema";
 import { getSessionId } from "@/lib/session";
-import { isDevConsoleEnabled } from "@/lib/credentials";
-import { connectDemoPlatform } from "@/lib/syncService";
+import { DEV_CREDENTIALS_KEY, isDevConsoleEnabled } from "@/lib/credentials";
+import { connectDemoPlatform, ensureSession } from "@/lib/syncService";
 import { clearPlatformData } from "@/lib/platformSync";
 
 export const dynamic = "force-dynamic";
@@ -29,6 +31,7 @@ export async function GET(req: Request) {
   if (!isDevConsoleEnabled()) return blocked();
 
   const sessionId = await getSessionId();
+  await ensureSession(sessionId);
   const limit = Math.min(Number(new URL(req.url).searchParams.get("limit")) || 50, 500);
 
   const [countRes] = await db
@@ -113,6 +116,7 @@ export async function POST(req: Request) {
   const action: string = body.action;
 
   try {
+    if (action !== "wipe-all") await ensureSession(sessionId);
     switch (action) {
       /* Popula dados de demonstração (playlists + faixas) no banco local */
       case "seed-demo": {
@@ -211,6 +215,10 @@ export async function POST(req: Request) {
         await db.delete(playlists).where(eq(playlists.sessionId, sessionId));
         await db.delete(searchHistory).where(eq(searchHistory.sessionId, sessionId));
         await db.delete(connectedAccounts).where(eq(connectedAccounts.sessionId, sessionId));
+        if (sessionId !== DEV_CREDENTIALS_KEY) {
+          await db.delete(appSettings).where(eq(appSettings.sessionId, sessionId));
+        }
+        await db.delete(userSessions).where(eq(userSessions.id, sessionId));
         return NextResponse.json({ success: true, action, sessionId });
       }
 
@@ -246,6 +254,20 @@ export async function POST(req: Request) {
         return NextResponse.json({ success: true, action, track: updated });
       }
 
+      /* Remove um usuário de teste (e-mail) com suas sessões de login (dev only) */
+      case "delete-user": {
+        const email = String(body.email || "").trim().toLowerCase();
+        if (!email) {
+          return NextResponse.json({ success: false, error: "email é obrigatório" }, { status: 400 });
+        }
+        const [user] = await db.select().from(appUsers).where(eq(appUsers.email, email)).limit(1);
+        if (!user) {
+          return NextResponse.json({ success: true, action, deleted: false });
+        }
+        await db.delete(appUsers).where(eq(appUsers.id, user.id));
+        return NextResponse.json({ success: true, action, deleted: true, email });
+      }
+
       default:
         return NextResponse.json(
           {
@@ -259,6 +281,7 @@ export async function POST(req: Request) {
               "wipe-session",
               "wipe-all",
               "toggle-like",
+              "delete-user",
             ],
           },
           { status: 400 }

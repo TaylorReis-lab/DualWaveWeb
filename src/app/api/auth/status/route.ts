@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { getSessionId } from "@/lib/session";
 import { getAccounts } from "@/lib/syncService";
+import { getCurrentUser, sanitizeUser } from "@/lib/auth";
+import { getSessionTokenHealth } from "@/lib/tokenRefresh";
 import {
   getCredentials,
   getOrigin,
@@ -18,6 +20,8 @@ export async function GET(req: Request) {
     const creds = await getCredentials();
     const origin = getOrigin(req);
     const redirectUris = getRedirectUris(origin);
+    const user = await getCurrentUser();
+    const tokenHealth = await getSessionTokenHealth(sessionId);
 
     const strip = (a: any) =>
       a
@@ -45,10 +49,12 @@ export async function GET(req: Request) {
     return NextResponse.json({
       success: true,
       sessionId,
+      user: user ? sanitizeUser(user) : null,
       spotify: strip(accounts.spotify),
       youtube: strip(accounts.youtube),
       bothConnected: accounts.bothConnected,
       anyConnected: accounts.anyConnected,
+      tokenHealth,
       credentials: {
         spotifyReady: creds.spotifyReady,
         googleReady: creds.googleReady,

@@ -1,7 +1,5 @@
 # 👨‍💻 DEVELOPER.md — Guia do Desenvolvedor Principal
 
----
-
 ## 🎯 Visão do Mantenedor
 
 O DualWave já é um MVP funcional e completo, com autenticação (real e sandbox), biblioteca sincronizada, player global, busca multi-plataforma e playlists híbridas. A partir daqui, o céu é o limite.
@@ -54,6 +52,41 @@ Use este documento como seu diário técnico pessoal, com tudo o que você preci
 | `src/lib/credentials.ts` | Resolução `.env` → banco, origem pública, redirect URIs, `isDevConsoleEnabled()` |
 | `src/lib/platformSync.ts` | `syncSpotifyAccount()` e `syncYoutubeAccount()` — a sincronização REAL |
 | `src/lib/youtubeMatch.ts` | `searchYoutubeVideoId()` (casa faixa do Spotify → vídeo oficial) + `parseIsoDuration()` |
+| `src/db/schema.ts` | Schema completo, tipos de plataforma, FKs, índices e checks PostgreSQL |
+| `drizzle.config.ts` | Configuração Drizzle Kit que lê `DATABASE_URL` do `.env` |
+| `drizzle/0000_thick_magus.sql` | Migration inicial versionada para bancos novos |
+| `scripts/dev-smoke-test.mjs` | Testes HTTP isolados e automatizados para o fluxo fullstack |
+
+### Schema e banco local
+
+O schema oficial está em `src/db/schema.ts`. Ele tem as seis tabelas base (`user_sessions`, `connected_accounts`, `playlists`, `tracks`, `search_history`, `app_settings`), FKs com `ON DELETE CASCADE`, índices de sessão/plataforma/ordem, unicidade de conta por serviço e checks para valores válidos.
+
+```bash
+# Aplicação direta do schema (recomendado em desenvolvimento)
+npx drizzle-kit push
+
+# Gerar uma migration após mudar o schema
+npx drizzle-kit generate
+
+# Aplicar migrations versionadas em banco novo
+npx drizzle-kit migrate
+```
+
+`drizzle.config.ts` usa `DATABASE_URL` de `.env`. Em produção, prefira migrations versionadas em vez de `push`.
+
+### Desenvolvedores logados no Console Dev
+
+O componente `src/components/DevUsersPanel.tsx` aparece em `/dev` e consulta `GET /api/dev/users`. A rota exige sessão de login válida, `role = dev` e Console Dev habilitado; visitantes recebem 401 e contas comuns recebem 403.
+
+- A consulta usa Drizzle e faz o join de `app_users` com `auth_sessions`.
+- Apenas sessões com `expires_at` no futuro são consideradas. Logout e expiração removem a sessão da lista.
+- Cada desenvolvedor aparece uma vez, com contagem de sessões, último login, última atividade e maior validade entre as sessões.
+- "Ativo recentemente" corresponde a uma atividade registrada nos últimos 5 minutos. Uma sessão aberta não comprova presença online em tempo real.
+- A lista atualiza a cada 30 segundos (com a aba visível), ao voltar à aba ou ao clicar em "Atualizar lista"/"Recarregar".
+- O payload é privado, sem cache, e não contém hashes de senha nem tokens de sessão/OAuth.
+- Os tipos do contrato ficam em `src/types/dev-users.ts`.
+
+Teste dedicado: `node scripts/dev-users-test.mjs` (app iniciado e Console Dev habilitado). Ele verifica permissões, agregação de sessões, logout, ausência de campos secretos, ícones e créditos. Se `DEV_SIGNUP_CODE` foi personalizado no servidor, forneça o mesmo valor ao executar o teste. As contas geradas são temporárias e não usam os dados pessoais do mantenedor.
 
 ### O que a sincronização real captura
 
@@ -91,6 +124,26 @@ curl localhost:3000/api/dev/db?limit=60
 curl -X POST localhost:3000/api/dev/db -H 'Content-Type: application/json' -d '{"action":"wipe-all"}'
 ```
 
+### Contas, sessões e renovação automática de tokens
+
+| Arquivo | Responsabilidade |
+|---|---|
+| `src/db/schema.ts` (`app_users`, `auth_sessions`, `user_sessions.user_id`) | Contas com hash scrypt, sessões de login (cookie `dw_auth`), vínculo sessão de música ↔ usuário |
+| `src/lib/password.ts` | `hashPassword()` / `verifyPassword()` (scrypt nativo, sem deps) |
+| `src/lib/session.ts` | `getSessionId()` resolve a sessão **efetiva**: logado → `u_<id>` permanente; anônimo → `usr_...` isolada. Todas as rotas de dados herdam isso sem mudanças |
+| `src/lib/auth.ts` | `registerUser()`, `verifyUserCredentials()`, `loginAndPrepare()` (sessão + migração + seed dev + refresh), `migrateAnonymousToUser()` com mesclagem sem duplicar playlists |
+| `src/lib/tokenRefresh.ts` | `getSessionTokenHealth()` (leitura, sem rede — usada no status) e `refreshSessionTokens()` (renovação real Spotify/Google — usada no login e no `/me`) |
+| `src/app/api/auth/{register,login,logout,me}/route.ts` | Ciclo de vida da conta |
+| `src/components/AuthModal.tsx` | UI de entrar/criar conta, com campo opcional de código dev |
+
+Detalhes importantes:
+
+- `DEV_SIGNUP_CODE` (padrão `dualwave-dev`) define quem vira `dev` no registro. Conta dev nova e vazia recebe seed demo automaticamente.
+- `expires_in` do OAuth é gravado em `connected_accounts.expires_at`; o refresh usa `refresh_token` com as credenciais resolvidas (env → banco).
+- Falha no refresh **nunca quebra o login**: marca `syncStatus=error` + `lastError` e orienta a reconectar.
+- `POST /api/dev/db` ganhou a ação `delete-user` (`{email}`) para limpar usuários de teste; o smoke test a utiliza.
+- Em produção pública, considere criptografar `access_token`/`refresh_token` em repouso (ver seção Segurança).
+
 ### Estratégia de reprodução (PlayerContext)
 
 1. `youtubeVideoId` presente → `loadVideoById()` (faixa completa)
@@ -120,7 +173,7 @@ curl -X POST localhost:3000/api/dev/db -H 'Content-Type: application/json' -d '{
 - [ ] **Modo Escuro / Claro** (atualmente só dark)
 - [ ] Tocar preview do Spotify em paralelo quando o YouTube estiver silenciado ou indisponível
 - [ ] Componente de **letra da música** (chamar API de lyrics pública)
-- [ ] Adicionar favicon customizado com o logo do DualWave
+- [x] Adicionar favicon customizado do DualWave (SVG, ICO 16/32/48 px e Apple PNG 180 px)
 - [ ] Criar `/public/og.png` para Open Graph
 
 ### 🟡 Médio Prazo
@@ -155,12 +208,27 @@ curl -X POST localhost:3000/api/dev/db -H 'Content-Type: application/json' -d '{
 
 ## 🧪 Testes e Qualidade
 
-Atualmente, foram rodados:
+### Smoke test fullstack para o desenvolvedor
+
+Com PostgreSQL pronto, schema aplicado e `npm run dev` ativo em outro terminal:
+
+```bash
+node scripts/dev-smoke-test.mjs
+# Para outro host/porta:
+DUALWAVE_URL=http://localhost:3001 node scripts/dev-smoke-test.mjs
+```
+
+O arquivo usa uma sessão efêmera, não precisa de OAuth, cobre as APIs de health/status/credenciais/seed/busca/filtros/playlists híbridas/likes/contas (registro dev, login, migração, token health, logout, re-login, senha errada) e apaga o usuário de teste mais os próprios dados ao terminar. Não executa `wipe-all`.
+
+### Validação de entrega
+
+Na validação desta versão foram rodados:
+- ✅ `npx drizzle-kit push` (schema atualizado no PostgreSQL local)
+- ✅ `npx drizzle-kit generate` (migration inicial versionada em `drizzle/`)
 - ✅ `npx next typegen` (rotas tipadas)
-- ✅ `tsc --noEmit` (TypeScript sem erros)
+- ✅ `npm exec tsc -- --noEmit --pretty false` (TypeScript sem erros)
 - ✅ `npm run build` (build de produção Next.js)
 - ✅ Health check `/api/health` retorna `{ok: true}`
-- ✅ Todos os testes manuais de API feitos via cURL (conectar, listar playlists, tocar, buscar, clonar, criar híbridas, curtir)
 
 **Para adicionar testes unitários:**
 
@@ -290,16 +358,19 @@ npx drizzle-kit studio  # Abre UI visual do Drizzle para explorar o banco
 
 ---
 
-## 📇 Seus Dados (Desenvolvedor Principal)
+## 📇 Desenvolvedor principal e mantenedor
 
-Preencha aqui quando quiser:
+**Taylor Reis**
 
-```
-Nome: Taylor Reis
-GitHub: @TaylorReis-lab
-Email: taylor-reis@outlook.com
-Website: https://taylorreis.netlify.app
-```
+- GitHub: [@TaylorReis-lab](https://github.com/TaylorReis-lab)
+- E-mail: [taylor-reis@outlook.com](mailto:taylor-reis@outlook.com)
+- Website: [taylorreis.netlify.app](https://taylorreis.netlify.app)
+
+Os dados públicos de autoria e a lista de contribuidores do site ficam em `src/lib/project.ts`. Eles alimentam os metadados, os rodapés e a página `/creditos`.
+
+Ao adicionar colaboradores, atualize `projectContributors` e `CREDITS.md` com nome, perfil e contribuição confirmada. O copyright da licença MIT está atribuído a Taylor Reis; isso não elimina a autoria de futuras contribuições.
+
+---
 
 ## 📓 Anotações Livres
 
