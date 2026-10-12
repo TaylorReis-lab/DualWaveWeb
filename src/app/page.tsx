@@ -14,7 +14,6 @@ import { PlaylistModal } from "@/components/PlaylistModal";
 import { CreateHybridModal } from "@/components/CreateHybridModal";
 import { SettingsModal } from "@/components/SettingsModal";
 import { AuthModal, type AuthUser } from "@/components/AuthModal";
-import { SiteCredits } from "@/components/SiteCredits";
 import { MobileNav } from "@/components/MobileNav";
 import { RefreshCw, CheckCircle2 } from "lucide-react";
 
@@ -296,9 +295,6 @@ function MainLayout() {
               onOpenHybridModal={() => setIsHybridModalOpen(true)}
             />
           )}
-          <footer className="mt-6 pb-6">
-            <SiteCredits />
-          </footer>
         </main>
       </div>
 

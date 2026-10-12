@@ -17,11 +17,15 @@
 
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
+import { config } from "dotenv";
+
+const mode = process.env.NODE_ENV === "production" ? "production" : "development";
+config({ path: [`.env.${mode}.local`, ".env.local", `.env.${mode}`, ".env"], quiet: true });
 
 const baseUrl = (process.env.DUALWAVE_URL || "http://127.0.0.1:3000").replace(/\/$/, "");
 const sessionId = `devtest_${Date.now().toString(36)}_${randomBytes(5).toString("hex")}`;
 const jar = { duo_music_session: sessionId };
-let smokeEmail = "";
+let smokeEmail = "dev@dualwave.com";
 const passed = [];
 
 function storeCookies(response) {
@@ -176,7 +180,7 @@ async function run() {
       email: smokeEmail,
       password: "smoke-pass-123",
       displayName: "Smoke Test",
-      devCode: "dualwave-dev",
+      devCode: process.env.DEV_SIGNUP_CODE || "dualwave-dev",
     },
   });
   check("registro cria conta e loga automaticamente", registered?.success === true && Boolean(registered.user?.id));

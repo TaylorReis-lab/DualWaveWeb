@@ -6,6 +6,27 @@ O DualWave já é um MVP funcional e completo, com autenticação (real e sandbo
 
 Use este documento como seu diário técnico pessoal, com tudo o que você precisa lembrar ao voltar ao projeto depois de um tempo.
 
+### Subir app e banco sem configurar scripts npm
+
+O passo a passo está em [`RUNNING.md`](./RUNNING.md). Os arquivos de infraestrutura estão versionados:
+
+- `scripts/run-local.mjs`: ambiente, dependências, banco, schema, servidor e testes.
+- `compose.yaml`: PostgreSQL 16 com health check e volume persistente.
+- `compose.app.yaml`: migrations e servidor Next.js standalone em containers.
+- `Dockerfile`: estágios separados, runtime sem root e sem credenciais embutidas.
+- `.env.example`: parâmetros de conexão, portas e OAuth; o inicializador gera senha e convite dev em instalação nova.
+- `.gitignore`/`.dockerignore`: exclusão de segredos e artefatos gerados.
+
+```bash
+node scripts/run-local.mjs dev                 # Banco + schema + app local
+node scripts/run-local.mjs dev --existing-db   # PostgreSQL já instalado
+node scripts/run-local.mjs docker:up           # Tudo em containers
+node scripts/run-local.mjs test                # Com app dev já rodando
+node scripts/run-local.mjs --help              # Todos os comandos
+```
+
+O modo dev usa `push`; Docker/produção usam `migrate`. A migration `0001_account_authentication.sql` acrescenta usuários e sessões de login ao schema inicial. Ao adotar migrations em banco existente criado com `push`, faça backup e baseline revisado; o inicializador não apaga dados para contornar conflitos.
+
 ---
 
 ## 🧠 Mapa Mental da Arquitetura Atual
@@ -59,7 +80,7 @@ Use este documento como seu diário técnico pessoal, com tudo o que você preci
 
 ### Schema e banco local
 
-O schema oficial está em `src/db/schema.ts`. Ele tem as seis tabelas base (`user_sessions`, `connected_accounts`, `playlists`, `tracks`, `search_history`, `app_settings`), FKs com `ON DELETE CASCADE`, índices de sessão/plataforma/ordem, unicidade de conta por serviço e checks para valores válidos.
+O schema oficial está em `src/db/schema.ts`. Ele tem oito tabelas: contas/sessões de login (`app_users`, `auth_sessions`) e a biblioteca/configuração (`user_sessions`, `connected_accounts`, `playlists`, `tracks`, `search_history`, `app_settings`). Inclui FKs, exclusão em cascata da biblioteca, índices de sessão/plataforma/ordem, unicidade de conta por serviço e checks para valores válidos.
 
 ```bash
 # Aplicação direta do schema (recomendado em desenvolvimento)
@@ -73,20 +94,6 @@ npx drizzle-kit migrate
 ```
 
 `drizzle.config.ts` usa `DATABASE_URL` de `.env`. Em produção, prefira migrations versionadas em vez de `push`.
-
-### Desenvolvedores logados no Console Dev
-
-O componente `src/components/DevUsersPanel.tsx` aparece em `/dev` e consulta `GET /api/dev/users`. A rota exige sessão de login válida, `role = dev` e Console Dev habilitado; visitantes recebem 401 e contas comuns recebem 403.
-
-- A consulta usa Drizzle e faz o join de `app_users` com `auth_sessions`.
-- Apenas sessões com `expires_at` no futuro são consideradas. Logout e expiração removem a sessão da lista.
-- Cada desenvolvedor aparece uma vez, com contagem de sessões, último login, última atividade e maior validade entre as sessões.
-- "Ativo recentemente" corresponde a uma atividade registrada nos últimos 5 minutos. Uma sessão aberta não comprova presença online em tempo real.
-- A lista atualiza a cada 30 segundos (com a aba visível), ao voltar à aba ou ao clicar em "Atualizar lista"/"Recarregar".
-- O payload é privado, sem cache, e não contém hashes de senha nem tokens de sessão/OAuth.
-- Os tipos do contrato ficam em `src/types/dev-users.ts`.
-
-Teste dedicado: `node scripts/dev-users-test.mjs` (app iniciado e Console Dev habilitado). Ele verifica permissões, agregação de sessões, logout, ausência de campos secretos, ícones e créditos. Se `DEV_SIGNUP_CODE` foi personalizado no servidor, forneça o mesmo valor ao executar o teste. As contas geradas são temporárias e não usam os dados pessoais do mantenedor.
 
 ### O que a sincronização real captura
 
@@ -138,7 +145,7 @@ curl -X POST localhost:3000/api/dev/db -H 'Content-Type: application/json' -d '{
 
 Detalhes importantes:
 
-- `DEV_SIGNUP_CODE` (padrão `dualwave-dev`) define quem vira `dev` no registro. Conta dev nova e vazia recebe seed demo automaticamente.
+- `DEV_SIGNUP_CODE` define quem vira `dev` no registro. O inicializador gera um convite privado no `.env` em instalações novas e evita o antigo valor público de demonstração nos modos de produção. Conta dev nova e vazia recebe seed demo automaticamente.
 - `expires_in` do OAuth é gravado em `connected_accounts.expires_at`; o refresh usa `refresh_token` com as credenciais resolvidas (env → banco).
 - Falha no refresh **nunca quebra o login**: marca `syncStatus=error` + `lastError` e orienta a reconectar.
 - `POST /api/dev/db` ganhou a ação `delete-user` (`{email}`) para limpar usuários de teste; o smoke test a utiliza.
@@ -173,7 +180,7 @@ Detalhes importantes:
 - [ ] **Modo Escuro / Claro** (atualmente só dark)
 - [ ] Tocar preview do Spotify em paralelo quando o YouTube estiver silenciado ou indisponível
 - [ ] Componente de **letra da música** (chamar API de lyrics pública)
-- [x] Adicionar favicon customizado do DualWave (SVG, ICO 16/32/48 px e Apple PNG 180 px)
+- [ ] Adicionar favicon customizado com o logo do DualWave
 - [ ] Criar `/public/og.png` para Open Graph
 
 ### 🟡 Médio Prazo
@@ -358,17 +365,23 @@ npx drizzle-kit studio  # Abre UI visual do Drizzle para explorar o banco
 
 ---
 
-## 📇 Desenvolvedor principal e mantenedor
+## 📇 Seus Dados (Desenvolvedor Principal)
 
-**Taylor Reis**
+Preencha aqui quando quiser:
 
-- GitHub: [@TaylorReis-lab](https://github.com/TaylorReis-lab)
-- E-mail: [taylor-reis@outlook.com](mailto:taylor-reis@outlook.com)
-- Website: [taylorreis.netlify.app](https://taylorreis.netlify.app)
+```
+Nome: ______________________________________
+GitHub: @__________________________________
+Email: _____________________________________
+Website: __________________________________
+Twitter/X: ________________________________
+```
 
-Os dados públicos de autoria e a lista de contribuidores do site ficam em `src/lib/project.ts`. Eles alimentam os metadados, os rodapés e a página `/creditos`.
-
-Ao adicionar colaboradores, atualize `projectContributors` e `CREDITS.md` com nome, perfil e contribuição confirmada. O copyright da licença MIT está atribuído a Taylor Reis; isso não elimina a autoria de futuras contribuições.
+Quando for lançar publicamente, atualize também:
+- `package.json` (seu nome como author)
+- `CREDITS.md`
+- README (badges, links)
+- Licença (seu nome no copyright do MIT)
 
 ---
 

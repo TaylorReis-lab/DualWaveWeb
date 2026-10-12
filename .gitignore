@@ -1,28 +1,22 @@
-# Dependencies
+# Dependências e builds
 node_modules/
-vendor/
-
-# Build output
-build/
+.next/
+out/
 dist/
 coverage/
-.next/
-.nuxt/
+*.tsbuildinfo
 
-# Environment and local configuration
-.env
-.env.*
+# Nunca publique credenciais reais; o modelo fica versionado.
+.env*
 !.env.example
 
-# Logs and temporary files
+# Logs, backups e artefatos de teste
 *.log
-tmp/
-temp/
-
-# OS and editor files
+backups/
+*-backup.sql
+*-dump.sql
+test-results/
+playwright-report/
 .DS_Store
-Thumbs.db
-.idea/
-.vscode/
-*.swp
-*.swo
+
+# Mantenha drizzle/*.sql e drizzle/meta/ versionados.

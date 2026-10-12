@@ -1,0 +1,53 @@
+# Complemento para rodar banco + migrations + aplicação em containers.
+# O script calcula DATABASE_URL_DOCKER com o hostname interno "db".
+# Use: node scripts/run-local.mjs docker:up
+services:
+  migrate:
+    build:
+      context: .
+      target: migrator
+    restart: "no"
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL_DOCKER:?Use scripts/run-local.mjs docker:up ou configure DATABASE_URL_DOCKER}
+    depends_on:
+      db:
+        condition: service_healthy
+
+  app:
+    build:
+      context: .
+      target: runner
+    restart: unless-stopped
+    init: true
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL_DOCKER:?Use scripts/run-local.mjs docker:up ou configure DATABASE_URL_DOCKER}
+      APP_URL: ${APP_URL:-http://127.0.0.1:3000}
+      PORT: "3000"
+      HOSTNAME: "0.0.0.0"
+      # O Console Dev nunca é exposto por este modo de implantação.
+      DISABLE_DEV_CONSOLE: "true"
+      DEV_SIGNUP_CODE: ${DEV_SIGNUP_CODE:?Defina um convite privado no .env ou use scripts/run-local.mjs docker:up}
+      # Variáveis do processo também funcionam (inclusive .env.local via script).
+      SPOTIFY_CLIENT_ID: ${SPOTIFY_CLIENT_ID:-}
+      SPOTIFY_CLIENT_SECRET: ${SPOTIFY_CLIENT_SECRET:-}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      YOUTUBE_API_KEY: ${YOUTUBE_API_KEY:-}
+    ports:
+      - "${APP_BIND_ADDRESS:-127.0.0.1}:${APP_PORT:-3000}:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(async r => { const body = await r.json(); process.exit(r.ok && body.ok ? 0 : 1); }).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    stop_grace_period: 30s

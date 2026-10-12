@@ -94,10 +94,15 @@ dualwave/
 │       ├── session.ts          # Gerenciamento de cookies de sessão
 │       ├── syncService.ts      # Camada de serviço (lógica de negócio, queries, sync)
 │       └── mockData.ts         # Dados ricos de demonstração (playlists e faixas padrão)
-├── public/                     # Assets estáticos
-├── drizzle.config.ts           # Drizzle Kit usando DATABASE_URL do .env
-├── drizzle/                     # Migrations versionadas (geradas pelo Drizzle Kit)
+├── public/                     # Assets estáticos (quando existentes)
+├── compose.yaml                # PostgreSQL local, com volume e health check
+├── compose.app.yaml            # Aplicação + migrations em containers
+├── Dockerfile                  # Build e runtime standalone sem credenciais
+├── RUNNING.md                  # Guia para subir, configurar e parar os serviços
+├── drizzle.config.ts           # Drizzle Kit usando o ambiente/.env.local/.env
+├── drizzle/                    # Migrations versionadas (incluindo contas de login)
 ├── scripts/
+│   ├── run-local.mjs            # Inicialização e operações de banco/app
 │   └── dev-smoke-test.mjs       # Testes HTTP isolados para o desenvolvedor
 ├── next.config.ts
 ├── tsconfig.json
@@ -106,7 +111,9 @@ dualwave/
 
 ### Esquema do Banco de Dados
 
-- `user_sessions` — sessões anônimas baseadas em cookie
+- `app_users` — contas DualWave com hash de senha e papel do usuário
+- `auth_sessions` — sessões de login com prazo de expiração
+- `user_sessions` — bibliotecas por sessão, vinculadas à conta quando logada
 - `connected_accounts` — contas Spotify/YouTube vinculadas a uma sessão
 - `playlists` — playlists de cada plataforma + playlists **híbridas**
 - `tracks` — faixas individuais, sempre associadas a uma plataforma de origem
@@ -121,47 +128,35 @@ Para aplicar/atualizar o schema local: `npx drizzle-kit push`. Para gerar migrat
 
 ## ⚡ Instalação & Execução Local
 
-### Pré-requisitos
-
-- Node.js 18+ (recomendado 20+)
-- PostgreSQL 14+ rodando localmente
-- npm ou pnpm ou yarn
-
-### Passo a passo
+Pré-requisitos: **Node.js 22 LTS** (mínimo 20.9), npm e Docker Desktop/Engine com **Compose v2.20+**. Depois de clonar ou extrair o projeto, na pasta raiz:
 
 ```bash
-# 1. Clone o repositório
-git clone https://github.com/seu-usuario/dualwave.git
-cd dualwave
-
-# 2. Instale as dependências
-npm install
-
-# 3. Configure o banco de dados (o .env padrão já aponta para postgres local)
-# Verifique se o arquivo .env contém:
-# DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/app_db
-
-# 4. Aplique o schema pré-configurado no PostgreSQL local
-npx drizzle-kit push
-# Alternativa em banco novo usando a migration versionada:
-# npx drizzle-kit migrate
-
-# 5. (Opcional) Para login OAuth real, configure as credenciais no .env
-# ou no Console Dev em http://localhost:3000/dev
-
-# 6. Rode em modo desenvolvimento
-npm run dev
-
-# 7. Em outro terminal, rode os testes de integração locais
-node scripts/dev-smoke-test.mjs
-
-# 8. Build de produção
-npm run build && npm start
+# Cria .env se necessário, instala dependências, sobe banco, aplica schema e inicia Next.js
+node scripts/run-local.mjs dev
 ```
 
-A aplicação estará disponível em **http://localhost:3000**
+A aplicação abre em **http://127.0.0.1:3000** e o Console Dev em **http://127.0.0.1:3000/dev**. O `.env` existente é preservado; uma instalação nova recebe senha de banco e convite dev aleatórios. Ctrl+C encerra o app sem apagar os dados do banco.
 
-> 💡 Mesmo **sem credenciais OAuth** configuradas, você pode usar o DualWave: clique em "Conectar Ambas em 1-Clique" no modal de conexão para carregar automaticamente uma biblioteca sandbox rica com ~25 músicas reais, playlists de amostra de ambas as plataformas e reprodução completa via YouTube.
+```bash
+# Já tem PostgreSQL instalado? Configure DATABASE_URL e dispense Docker
+node scripts/run-local.mjs dev --existing-db
+
+# Aplicação + PostgreSQL + migrations, tudo em containers
+node scripts/run-local.mjs docker:up
+
+# Testes em outro terminal, com o app em modo desenvolvimento
+node scripts/run-local.mjs test
+
+# Parar o banco local, preservando dados
+node scripts/run-local.mjs db:down
+
+# Parar o modo completo Docker, preservando dados
+node scripts/run-local.mjs docker:down
+```
+
+**Guia completo:** [`RUNNING.md`](./RUNNING.md) — configuração, portas, migrations, build/produção, publicação com HTTPS, backup e resolução de problemas. Ajuda rápida: `node scripts/run-local.mjs --help`.
+
+> 💡 Credenciais OAuth são opcionais para testar com a biblioteca de demonstração; são necessárias para conectar Spotify/Google reais. O Docker completo usa migrations versionadas e desabilita o Console Dev. Desenvolvimento usa `push`; não misture os dois fluxos no mesmo banco sem baseline.
 
 ---
 
@@ -207,7 +202,7 @@ Usuários normais podem **criar uma conta** (botão "Entrar / Criar conta" na na
 - **Ao entrar, o servidor verifica automaticamente se os tokens expiraram** e os renova via refresh token — a interface mostra "renovado" e o estado de cada token (válido, expirando, expirado, demo).
 - Sair da conta mantém tudo salvo no servidor; entrar de novo restaura tudo.
 
-**Conta de desenvolvedor:** no registro, informe o código dev (`DEV_SIGNUP_CODE`, padrão `dualwave-dev`) para criar uma conta `dev`. Ela abre com os logins de demonstração já presentes, exibe o selo DEV na navbar e destaca o acesso ao Console Dev.
+**Conta de desenvolvedor:** no registro, informe seu convite privado `DEV_SIGNUP_CODE`, disponível no `.env` gerado pelo inicializador, para criar uma conta `dev`. Ela abre com os logins de demonstração já presentes e exibe o selo DEV na navbar. O Console Dev fica disponível no ambiente de desenvolvimento; a implantação o desabilita.
 
 Rotas:
 
@@ -231,7 +226,6 @@ Desative em produção com `DISABLE_DEV_CONSOLE=true`.
 Acesse **`/dev`** (ou clique no ícone de terminal na navbar) para:
 
 - Ver o estado do banco local (contagens de sessões, contas, playlists, faixas e buscas)
-- **Ver os desenvolvedores logados** (login dev necessário): nome, e-mail, sessões abertas, último login, última atividade e validade, com busca e atualização a cada 30 segundos. Logout e expiração removem sessões; atividade recente não significa presença online garantida.
 - Ver a `DATABASE_URL` mascarada e o `NODE_ENV`
 - **Gravar credenciais OAuth no banco** (Spotify/Google/YouTube API Key) sem editar `.env` nem reiniciar
 - Copiar os Redirect URIs exatos com um clique
@@ -245,13 +239,10 @@ Execute `node scripts/dev-smoke-test.mjs` com `npm run dev` ativo. O script usa 
 
 Para testar outro endereço: `DUALWAVE_URL=http://localhost:3001 node scripts/dev-smoke-test.mjs`.
 
-O teste adicional `node scripts/dev-users-test.mjs` cobre permissões da lista de devs, múltiplas sessões, logout, privacidade do retorno, favicon e créditos. Ele cria e remove somente contas fictícias. Caso personalize `DEV_SIGNUP_CODE`, forneça o mesmo valor ao executar esse teste.
-
 ### Rotas HTTP
 
 | Método | Rota | O que faz |
 |---|---|---|
-| `GET` | `/api/dev/users` | Lista devs com sessões não expiradas. Requer login com `role=dev`; nunca retorna senhas ou tokens |
 | `GET` | `/api/dev/db?limit=60` | Inspeciona o banco local (totais, contas com IDs reais, playlists, faixas, buscas) |
 | `POST` | `/api/dev/db` | `{action: "seed-demo" \| "insert-track" \| "insert-playlist" \| "clear-platform" \| "wipe-session" \| "wipe-all" \| "toggle-like"}` |
 | `GET` | `/api/dev/credentials` | Mostra credenciais ativas (mascaradas), origem dos valores (`env`/`db`) e Redirect URIs |
@@ -330,15 +321,7 @@ Distribuído sob a licença **MIT**. Veja o arquivo `LICENSE` para mais detalhes
 
 ## 👥 Créditos
 
-**Desenvolvedor principal e mantenedor: Taylor Reis.**
-
-- GitHub: [@TaylorReis-lab](https://github.com/TaylorReis-lab)
-- E-mail: [taylor-reis@outlook.com](mailto:taylor-reis@outlook.com)
-- Website: [taylorreis.netlify.app](https://taylorreis.netlify.app)
-
-Os créditos e contribuidores também aparecem no site em **`/creditos`**, acessível pelos rodapés do app e do Console Dev. Para atualizar a identidade pública ou adicionar um contribuidor confirmado, edite `src/lib/project.ts` e mantenha [`CREDITS.md`](./CREDITS.md) alinhado.
-
-O favicon próprio do DualWave está em `src/app/icon.svg`, com versões `favicon.ico` (16/32/48 px) e `apple-icon.png` (180 px) reconhecidas automaticamente pelo Next.js.
+Veja [`CREDITS.md`](./CREDITS.md) para a lista completa de créditos, menções e agradecimentos.
 
 ---
 

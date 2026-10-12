@@ -1,0 +1,15 @@
+node_modules
+.next
+.git
+.gitignore
+.env
+.env.*
+*.log
+*.tsbuildinfo
+coverage
+backups
+*-backup.sql
+*-dump.sql
+test-results
+playwright-report
+.DS_Store

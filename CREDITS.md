@@ -1,70 +1,106 @@
-# Créditos e agradecimentos — DualWave
+# 🎖️ Créditos e Agradecimentos
 
-## Desenvolvedor principal e mantenedor
+---
 
-**Taylor Reis** é o desenvolvedor principal e mantenedor do DualWave, projeto dedicado à comunidade open source.
+## 👤 Desenvolvedor Principal
 
-| Informação | Contato |
-|---|---|
-| Nome | Taylor Reis |
-| GitHub | [@TaylorReis-lab](https://github.com/TaylorReis-lab) |
-| E-mail | [taylor-reis@outlook.com](mailto:taylor-reis@outlook.com) |
-| Website | [taylorreis.netlify.app](https://taylorreis.netlify.app) |
+O **DualWave** é um projeto open source idealizado, arquitetado e desenvolvido por:
 
-Responsabilidades: idealização do projeto, desenvolvimento fullstack, integração com Spotify e YouTube, experiência de uso, documentação e manutenção.
+### ⭐ **Você** — Desenvolvedor Principal e Mantenedor
+> *Nome a ser preenchido pelo autor principal.*
 
-Os mesmos dados estão disponíveis no site em **`/creditos`**, nos rodapés do app e do Console Dev e nos metadados de autoria.
+- Arquiteto do sistema unificado de streaming
+- Responsável pela integração dual Spotify + YouTube Music
+- Autor da UI/UX e do player global unificado
+- Mantenedor oficial do repositório open source
 
-## Contribuidores
+> *Para atualizar seus dados, edite este arquivo e substitua este bloco pelo seu nome, redes sociais, email, GitHub, etc.*
 
-| Pessoa | Perfil | Contribuição |
-|---|---|---|
-| **Taylor Reis** | [@TaylorReis-lab](https://github.com/TaylorReis-lab) | Idealização, desenvolvimento principal e manutenção do DualWave. |
+---
 
-A lista acima contém os contribuidores identificados até o momento. Novos colaboradores podem ser adicionados após suas contribuições, com nome, perfil e descrição do trabalho. Não há geração automática desta lista.
+## 🛠️ Stack e Bibliotecas Open Source Utilizadas
 
-Para atualizar a lista no site, edite **`src/lib/project.ts`** (`projectAuthor` e `projectContributors`) e mantenha este documento alinhado.
+Este projeto não seria possível sem as seguintes tecnologias e bibliotecas incríveis:
 
-## Tecnologias open source
+### Frameworks e Core
+- [**Next.js 16**](https://nextjs.org/) — React framework fullstack (App Router) por Vercel
+- [**React 19**](https://reactjs.org/) — Biblioteca UI
+- [**TypeScript 5.9**](https://www.typescriptlang.org/) — Tipagem estática
+- [**PostgreSQL**](https://www.postgresql.org/) — Banco de dados relacional
 
-### Frameworks e linguagem
-- [Next.js](https://nextjs.org/) — framework fullstack com App Router, mantido pela Vercel e comunidade.
-- [React](https://react.dev/) — biblioteca de interface.
-- [TypeScript](https://www.typescriptlang.org/) — linguagem com tipagem estática.
-- [Node.js](https://nodejs.org/) — runtime do servidor; fornece o scrypt usado no hash de senhas.
+### Data Layer
+- [**Drizzle ORM**](https://orm.drizzle.team/) — ORM TypeScript-first
+- [`pg`](https://node-postgres.com/) — Driver PostgreSQL para Node.js
 
-### Banco de dados
-- [PostgreSQL](https://www.postgresql.org/) — persistência de contas, sessões e bibliotecas.
-- [Drizzle ORM](https://orm.drizzle.team/) — acesso ao banco e modelagem do schema.
-- [node-postgres (`pg`)](https://node-postgres.com/) — driver PostgreSQL.
+### Estilização e UI
+- [**Tailwind CSS v4**](https://tailwindcss.com/) — Utility-first CSS framework
+- [**Lucide React**](https://lucide.dev/) — Ícones open source bonitos e consistentes
 
-### Interface e assets
-- [Tailwind CSS](https://tailwindcss.com/) — estilização.
-- [Lucide](https://lucide.dev/) — ícones da interface.
-- [Unsplash](https://unsplash.com/) — imagens usadas nos dados de demonstração; as licenças das imagens são independentes da licença do código.
-- [Sharp](https://sharp.pixelplumbing.com/) — conversão do favicon SVG para ICO e PNG.
+### Integrações Externas
+- [**Spotify Web API**](https://developer.spotify.com/documentation/web-api) — API oficial do Spotify
+- [**YouTube Data API v3**](https://developers.google.com/youtube/v3) — API oficial do YouTube
+- [**YouTube IFrame Player API**](https://developers.google.com/youtube/iframe_api_reference) — Reprodução de vídeos embutidos
+- [**OAuth 2.0**](https://oauth.net/2/) — Protocolo de autorização para login social
 
-O favicon é uma composição própria do DualWave (onda sonora e reprodução, em verde e rosa), sem uso dos logos oficiais dos serviços. Os assets estão em `src/app/icon.svg`, `src/app/favicon.ico` e `src/app/apple-icon.png`.
+### Imagens de Demonstração
+- **Unsplash** — [unsplash.com](https://unsplash.com/) (capas de playlists e thumbnails mock)
 
-## Integrações
+### Infraestrutura / Runtime
+- Agradecimentos à plataforma de preview / hospedagem onde o DualWave é executado.
 
-- [Spotify Web API](https://developer.spotify.com/documentation/web-api).
-- [YouTube Data API v3](https://developers.google.com/youtube/v3).
-- [YouTube IFrame Player API](https://developers.google.com/youtube/iframe_api_reference).
-- [OAuth 2.0](https://oauth.net/2/) para autorização das contas.
+---
 
-O DualWave **não é afiliado nem endossado pelo Spotify ou pelo Google/YouTube**. Spotify, YouTube e YouTube Music são marcas de seus respectivos titulares. As integrações estão sujeitas às políticas e limitações de cada serviço.
+## 🎨 Agradecimentos de Design
 
-## Músicas e vídeos de demonstração
+- Inspirado nos players oficiais de Spotify e YouTube Music, com toques originais
+- Paleta de cores do marca combina o verde `#1DB954` do Spotify com o vermelho `#FF0000` do YouTube
+- Tipografia padrão do sistema + animações suaves para uma UX fluida
 
-Os nomes de músicas e artistas no sandbox são utilizados para demonstrar a aplicação. Nenhuma propriedade sobre essas obras é reivindicada. Músicas, vídeos, capas e marcas permanecem sujeitos aos direitos de seus titulares; a licença MIT do projeto não concede direitos sobre esse conteúdo.
+---
 
-## Licença
+## 📝 Dados de Música de Demonstração (Modo Sandbox)
 
-**Copyright © 2026 Taylor Reis.** O código do projeto é distribuído sob a licença [MIT](./LICENSE). Bibliotecas, serviços e conteúdo externo mantêm suas próprias licenças e condições de uso.
+As playlists e faixas carregadas no modo 1-clique sem credenciais são apenas ilustrativas e incluem nomes de artistas e faixas mundialmente famosas (The Weeknd, Billie Eilish, Taylor Swift, Coldplay, Queen, Dua Lipa, Post Malone, Matuê, Anitta, Alok, Kendrick Lamar, entre outros). Todos os direitos pertencem aos artistas e gravadoras. Esses dados são usados exclusivamente para demonstração do produto.
 
-## Agradecimentos
+---
 
-À comunidade open source, aos mantenedores das ferramentas utilizadas e às pessoas que testam, reportam problemas e contribuem com ideias e documentação.
+## 🫶 Contribuidores
 
-Para falar sobre contribuições, contate [Taylor Reis](mailto:taylor-reis@outlook.com).
+Contribuidores open source que ajudaram o projeto a crescer:
+
+*(Lista gerada automaticamente pelo GitHub — mantenedor pode atualizar)*
+
+<!-- Você pode adicionar contribuidores aqui:
+- **[Seu nome]** — link do GitHub, descrição da contribuição
+-->
+
+---
+
+## 📄 Licença
+
+- Este projeto é distribuído sob a licença **MIT** (veja `LICENSE`).
+- Spotify™ é uma marca registrada da Spotify AB.
+- YouTube Music™ e YouTube™ são marcas registradas da Google LLC.
+- Este projeto **não é oficialmente afiliado** nem endossado pelo Spotify ou pelo Google/YouTube — é uma integração open source construída por desenvolvedores para a comunidade.
+
+---
+
+## 💌 Agradecimentos Especiais
+
+- À comunidade de desenvolvedores brasileiros de JavaScript/TypeScript
+- Aos mantenedores das bibliotecas open source utilizadas
+- A todos que reportaram bugs, sugeriram features e testaram o projeto
+- Você, por usar, forkar, estender e contribuir com o DualWave!
+
+---
+
+## 🌱 Como Adicionar Seus Créditos
+
+Como desenvolvedor principal, basta editar a seção **Desenvolvedor Principal** no topo deste arquivo e adicionar:
+
+- Seu nome
+- Seu GitHub (ex: `@seuusername`)
+- Seu email / website / redes sociais
+- Uma bio curta
+
+Se outros contribuidores participarem, basta adicioná-los na seção **Contribuidores** seguindo o formato.
