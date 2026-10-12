@@ -1,7 +1,6 @@
 # 👨‍💻 DEVELOPER.md — Guia do Desenvolvedor Principal
 
-
-
+---
 
 ## 🎯 Visão do Mantenedor
 
@@ -16,9 +15,12 @@ Use este documento como seu diário técnico pessoal, com tudo o que você preci
 ### Fluxo de Dados
 
 1. **Sessão**: cookie `duo_music_session` é gerado no primeiro acesso (`src/lib/session.ts`).
-2. **Conexão de Contas**:
-   - OAuth real → endpoints `/api/auth/spotify` e `/api/auth/youtube` redirecionam, callback troca tokens e chama a API oficial para baixar playlists/músicas.
-   - Modo sandbox → `/api/auth/connect` injeta playlists/tracks mockadas realistas definidas em `src/lib/mockData.ts` — zero setup para demonstração.
+2. **Conexão de Contas** (3 caminhos):
+   - **OAuth real** → `/api/auth/spotify` e `/api/auth/youtube` redirecionam o usuário para a **tela de login oficial**; o callback troca o `code` por tokens e chama `syncSpotifyAccount` / `syncYoutubeAccount` (`src/lib/platformSync.ts`), que puxam os IDs reais e gravam tudo no banco.
+   - **Token manual (dev)** → `POST /api/dev/token` recebe um `accessToken` colado e roda a MESMA sincronização real. Perfeito para testar sem configurar redirect URI.
+   - **Modo sandbox** → `/api/auth/connect` injeta playlists/faixas de demonstração de `src/lib/mockData.ts` — zero setup.
+3. **Credenciais** (`src/lib/credentials.ts`): resolução em cascata `.env` → banco (`app_settings` com `sessionId = '__dev_console__'`). O Console Dev (`/dev`) grava no banco sem reiniciar o servidor.
+4. **Redirect URI / origem**: `getOrigin(req)` respeita `NEXT_PUBLIC_APP_URL` e os headers `x-forwarded-proto` / `x-forwarded-host` — essencial em preview atrás de proxy (senão vira `0.0.0.0`).
 3. **Player Global**: Provider React em `src/context/PlayerContext.tsx` usa:
    - **YouTube IFrame Player API** (prioridade, toca músicas completas)
    - `<audio>` HTML5 para prévias de 30s do Spotify
@@ -36,6 +38,72 @@ Use este documento como seu diário técnico pessoal, com tudo o que você preci
 - **youtubeVideoId**: campo presente em *todas* as faixas (mesmo Spotify), permitindo que o player global sempre consiga tocar a faixa completa via YouTube.
 - **Track IDs**: IDs negativos temporários são usados para faixas do catálogo que ainda não foram salvas no banco.
 - **Estilização**: tudo em Tailwind, tema dark (zinc-950 como base), verde `#1DB954` (Spotify), vermelho `#FF0000` (YouTube).
+
+---
+
+## 🧪 Console Dev (`/dev`) — como testar rápido no banco local
+
+### Arquivos envolvidos
+
+| Arquivo | Responsabilidade |
+|---|---|
+| `src/app/dev/page.tsx` | UI do console (status do banco, credenciais, sync por token, inserts manuais, dump) |
+| `src/app/api/dev/db/route.ts` | `GET` inspeção · `POST` ações (`seed-demo`, `insert-track`, `insert-playlist`, `clear-platform`, `wipe-session`, `wipe-all`, `toggle-like`) |
+| `src/app/api/dev/credentials/route.ts` | `GET`/`POST`/`DELETE` das credenciais gravadas no banco |
+| `src/app/api/dev/token/route.ts` | `POST` sincronização real com token colado manualmente |
+| `src/lib/credentials.ts` | Resolução `.env` → banco, origem pública, redirect URIs, `isDevConsoleEnabled()` |
+| `src/lib/platformSync.ts` | `syncSpotifyAccount()` e `syncYoutubeAccount()` — a sincronização REAL |
+| `src/lib/youtubeMatch.ts` | `searchYoutubeVideoId()` (casa faixa do Spotify → vídeo oficial) + `parseIsoDuration()` |
+
+### O que a sincronização real captura
+
+**Spotify** (`syncSpotifyAccount`):
+- `/me` → **id da conta**, display_name, email, images, `product`, `country`, `followers` (tudo em `rawProfile` JSONB)
+- `/me/tracks` → playlist "Músicas Curtidas (Spotify)" (`kind = liked`)
+- `/me/top/tracks` → "Minhas Mais Tocadas" (`kind = top`)
+- `/me/player/recently-played` → "Tocadas Recentemente" (`kind = recent`)
+- `/me/playlists` (paginado) + `/playlists/{id}/tracks` (paginado) → playlists do usuário
+- Cada faixa guarda `externalId` (track id), `spotifyUri`, `previewUrl`, `externalUrl`, `explicit`, `durationSeconds`
+- Se `YOUTUBE_API_KEY` existir → `searchYoutubeVideoId()` preenche `youtubeVideoId` (`matchSource = 'auto'`)
+
+**YouTube** (`syncYoutubeAccount`):
+- `oauth2/v3/userinfo` → `sub`, nome, e-mail, foto
+- `/channels?mine=true` → **channelId**, `relatedPlaylists.likes` (`LL<channelId>`) e `.uploads`
+- Playlist "Músicas Curtidas (YouTube Music)" a partir do `likes`
+- `/playlists?mine=true` (paginado) + `/playlistItems` (paginado)
+- `/videos?part=contentDetails,snippet` em lotes de 50 → **duração real** (ISO-8601 → segundos) e thumbnail
+
+### Receitas de teste
+
+```bash
+# gravar credenciais no banco (não precisa reiniciar)
+curl -X POST localhost:3000/api/dev/credentials -H 'Content-Type: application/json' \
+  -d '{"spotifyClientId":"...","youtubeApiKey":"..."}'
+
+# sincronizar de verdade com um token colado
+curl -X POST localhost:3000/api/dev/token -H 'Content-Type: application/json' \
+  -d '{"platform":"spotify","accessToken":"BQ..."}'
+
+# ver IDs, contas e faixas que estão no banco
+curl localhost:3000/api/dev/db?limit=60
+
+# zerar tudo e recomeçar
+curl -X POST localhost:3000/api/dev/db -H 'Content-Type: application/json' -d '{"action":"wipe-all"}'
+```
+
+### Estratégia de reprodução (PlayerContext)
+
+1. `youtubeVideoId` presente → `loadVideoById()` (faixa completa)
+2. sem `youtubeVideoId` → `loadPlaylist({ listType: "search", list: "artista título official audio" })` — busca direto no IFrame, **não precisa de API key**
+3. player ainda não pronto e há `previewUrl` → `<audio>` com a prévia oficial do Spotify
+
+> ⚠️ O fallback por busca depende de o IFrame aceitar `listType: search`. Se o YouTube remover esse recurso, a saída é tornar `YOUTUBE_API_KEY` obrigatório e usar `searchYoutubeVideoId()` no servidor.
+
+### Segurança do console
+
+- `isDevConsoleEnabled()` → `process.env.DISABLE_DEV_CONSOLE !== "true"`
+- **Defina `DISABLE_DEV_CONSOLE=true` em produção pública** (o console expõe tokens mascarados e permite limpar o banco)
+- `wipe-all` apaga TODAS as sessões — em dev pede `confirm()` no front
 
 ---
 

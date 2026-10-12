@@ -1,165 +1,110 @@
 import { NextResponse } from "next/server";
-import { getSessionId } from "@/lib/session";
+import { cookies } from "next/headers";
 import { db } from "@/db";
-import { connectedAccounts, playlists, tracks } from "@/db/schema";
+import { connectedAccounts } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
+import { getSessionId } from "@/lib/session";
+import { getCredentials, getOrigin, getRedirectUris } from "@/lib/credentials";
+import { syncSpotifyAccount } from "@/lib/platformSync";
 
+export const dynamic = "force-dynamic";
+
+/**
+ * GET /api/auth/spotify/callback
+ * Recebe o `code` da tela de login do Spotify, troca por access_token,
+ * puxa o ID do usuário + todas as playlists/faixas e grava no banco local.
+ */
 export async function GET(req: Request) {
+  const origin = getOrigin(req);
+  const { spotify: redirectUri } = getRedirectUris(origin);
   const url = new URL(req.url);
   const code = url.searchParams.get("code");
   const error = url.searchParams.get("error");
+  const state = url.searchParams.get("state");
+
+  const cookieStore = await cookies();
+  const creds = await getCredentials();
   const sessionId = await getSessionId();
 
-  if (error || !code) {
-    return NextResponse.redirect(new URL("/?auth_error=" + encodeURIComponent(error || "no_code"), req.url));
-  }
+  const fail = (msg: string) =>
+    NextResponse.redirect(`${origin}/dev?error=spotify&msg=${encodeURIComponent(msg)}`);
 
-  const clientId = process.env.SPOTIFY_CLIENT_ID;
-  const clientSecret = process.env.SPOTIFY_CLIENT_SECRET;
-  const redirectUri = `${url.origin}/api/auth/spotify/callback`;
+  if (error) return fail(`login_cancelado_ou_negado:${error}`);
+  if (!code) return fail("code_ausente_no_callback");
 
-  if (!clientId || !clientSecret) {
-    return NextResponse.redirect(new URL("/?modal=connect_spotify&missing_creds=1", req.url));
-  }
+  const expectedState = cookieStore.get("dw_sp_state")?.value;
+  if (expectedState && state !== expectedState) return fail("state_invalido_possivel_csrf");
+
+  if (!creds.spotifyClientId) return fail("SPOTIFY_CLIENT_ID_nao_configurado");
 
   try {
-    // Exchange token
+    // 1) Troca do authorization code por tokens
+    const body = new URLSearchParams({
+      grant_type: "authorization_code",
+      code,
+      redirect_uri: redirectUri,
+    });
+    const headers: Record<string, string> = {
+      "Content-Type": "application/x-www-form-urlencoded",
+    };
+
+    if (creds.spotifyClientSecret) {
+      headers.Authorization =
+        "Basic " + Buffer.from(`${creds.spotifyClientId}:${creds.spotifyClientSecret}`).toString("base64");
+    } else {
+      // Fluxo público PKCE
+      body.set("client_id", creds.spotifyClientId);
+      const verifier = cookieStore.get("dw_sp_verifier")?.value;
+      if (verifier) body.set("code_verifier", verifier);
+    }
+
     const tokenRes = await fetch("https://accounts.spotify.com/api/token", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        Authorization: "Basic " + Buffer.from(`${clientId}:${clientSecret}`).toString("base64"),
-      },
-      body: new URLSearchParams({
-        grant_type: "authorization_code",
-        code,
-        redirect_uri: redirectUri,
-      }),
+      headers,
+      body: body.toString(),
+      cache: "no-store",
     });
+    const tokenData = await tokenRes.json().catch(() => ({}));
 
-    const tokenData = await tokenRes.json();
     if (!tokenRes.ok || !tokenData.access_token) {
-      throw new Error(tokenData.error_description || "Falha ao obter token do Spotify");
+      throw new Error(
+        `troca_de_token_falhou (${tokenRes.status}): ${tokenData.error_description || tokenData.error || "desconhecido"}`
+      );
     }
 
-    const accessToken = tokenData.access_token;
-    const refreshToken = tokenData.refresh_token;
-
-    // Fetch user profile
-    const profileRes = await fetch("https://api.spotify.com/v1/me", {
-      headers: { Authorization: `Bearer ${accessToken}` },
+    // 2) Sincronização completa (perfil + playlists + faixas + curtidas + top)
+    const report = await syncSpotifyAccount(sessionId, tokenData.access_token, tokenData.refresh_token ?? null, {
+      autoMatchYoutube: true,
+      youtubeApiKey: creds.youtubeApiKey,
     });
-    const profile = await profileRes.json();
 
-    // Fetch user playlists
-    const playlistsRes = await fetch("https://api.spotify.com/v1/me/playlists?limit=20", {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-    const playlistsData = await playlistsRes.json();
-
-    let totalTracks = 0;
-
-    // Save or update account
-    const existing = await db
-      .select()
-      .from(connectedAccounts)
-      .where(and(eq(connectedAccounts.sessionId, sessionId), eq(connectedAccounts.platform, "spotify")))
-      .limit(1);
-
-    const displayName = profile.display_name || profile.id || "Usuário Spotify";
-    const avatarUrl = profile.images?.[0]?.url || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80";
-
-    if (existing.length > 0) {
+    // 3) Registra avisos não-fatais para inspeção no Console Dev
+    if (report.warnings.length > 0) {
       await db
         .update(connectedAccounts)
-        .set({
-          isConnected: true,
-          accountId: profile.id,
-          displayName,
-          email: profile.email || null,
-          avatarUrl,
-          accessToken,
-          refreshToken,
-          syncStatus: "synced",
-          lastSyncedAt: new Date(),
-        })
-        .where(eq(connectedAccounts.id, existing[0].id));
-    } else {
-      await db.insert(connectedAccounts).values({
-        sessionId,
-        platform: "spotify",
-        accountId: profile.id,
-        displayName,
-        email: profile.email || null,
-        avatarUrl,
-        accessToken,
-        refreshToken,
-        isConnected: true,
-        syncStatus: "synced",
-        lastSyncedAt: new Date(),
-      });
+        .set({ lastError: report.warnings.slice(0, 6).join(" | ").slice(0, 900) })
+        .where(
+          and(eq(connectedAccounts.sessionId, sessionId), eq(connectedAccounts.platform, "spotify"))
+        );
     }
 
-    // Save playlists & some tracks
-    if (playlistsData.items && Array.isArray(playlistsData.items)) {
-      for (const pl of playlistsData.items) {
-        const [savedPl] = await db
-          .insert(playlists)
-          .values({
-            sessionId,
-            platform: "spotify",
-            externalId: pl.id,
-            title: pl.name,
-            description: pl.description || "",
-            coverUrl: pl.images?.[0]?.url || "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=400&auto=format&fit=crop&q=80",
-            trackCount: pl.tracks?.total || 0,
-            isPublic: pl.public ?? true,
-          })
-          .returning();
+    cookieStore.delete("dw_sp_state");
+    cookieStore.delete("dw_sp_verifier");
 
-        // Fetch top tracks for this playlist
-        try {
-          const plTracksRes = await fetch(`https://api.spotify.com/v1/playlists/${pl.id}/tracks?limit=15`, {
-            headers: { Authorization: `Bearer ${accessToken}` },
-          });
-          const plTracksData = await plTracksRes.json();
-          if (plTracksData.items && Array.isArray(plTracksData.items)) {
-            for (let i = 0; i < plTracksData.items.length; i++) {
-              const item = plTracksData.items[i];
-              if (!item.track) continue;
-              const t = item.track;
-              totalTracks++;
-              await db.insert(tracks).values({
-                sessionId,
-                playlistId: savedPl.id,
-                platform: "spotify",
-                externalId: t.id,
-                title: t.name,
-                artist: t.artists?.map((a: any) => a.name).join(", ") || "Artista Desconhecido",
-                album: t.album?.name,
-                durationSeconds: Math.floor((t.duration_ms || 0) / 1000),
-                thumbnailUrl: t.album?.images?.[0]?.url,
-                previewUrl: t.preview_url,
-                spotifyUri: t.uri,
-                position: i,
-              });
-            }
-          }
-        } catch (e) {
-          console.error("Error fetching tracks for playlist", pl.id, e);
-        }
-      }
-    }
-
-    // Update count
+    const params = new URLSearchParams({
+      connected: "spotify",
+      account: report.accountId || "",
+      playlists: String(report.playlists),
+      tracks: String(report.tracks),
+    });
+    return NextResponse.redirect(`${origin}/?${params.toString()}`);
+  } catch (err: any) {
+    console.error("[Spotify OAuth]", err);
     await db
       .update(connectedAccounts)
-      .set({ itemCount: totalTracks })
-      .where(and(eq(connectedAccounts.sessionId, sessionId), eq(connectedAccounts.platform, "spotify")));
-
-    return NextResponse.redirect(new URL("/?connected=spotify", req.url));
-  } catch (err: any) {
-    console.error("Spotify OAuth callback error:", err);
-    return NextResponse.redirect(new URL("/?auth_error=" + encodeURIComponent(err.message), req.url));
+      .set({ syncStatus: "error", lastError: String(err?.message || err).slice(0, 900) })
+      .where(and(eq(connectedAccounts.sessionId, sessionId), eq(connectedAccounts.platform, "spotify")))
+      .catch(() => undefined);
+    return fail(String(err?.message || "erro_desconhecido"));
   }
 }

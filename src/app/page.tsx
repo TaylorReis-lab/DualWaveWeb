@@ -33,6 +33,15 @@ function MainLayout() {
     anyConnected: boolean;
     hasSpotifyConfig?: boolean;
     hasGoogleConfig?: boolean;
+    credentials?: {
+      spotifyReady: boolean;
+      googleReady: boolean;
+      spotifySource: "env" | "db" | null;
+      googleSource: "env" | "db" | null;
+      hasYoutubeApiKey: boolean;
+    };
+    redirectUris?: { spotify: string; youtube: string };
+    dev?: { consoleEnabled: boolean; isDevRuntime: boolean; consoleUrl: string };
   } | null>(null);
 
   // Modals state
@@ -55,6 +64,9 @@ function MainLayout() {
           anyConnected: data.anyConnected,
           hasSpotifyConfig: data.hasSpotifyConfig,
           hasGoogleConfig: data.hasGoogleConfig,
+          credentials: data.credentials,
+          redirectUris: data.redirectUris,
+          dev: data.dev,
         });
 
         // If neither account is connected on first visit, open connect modal automatically to guide user!

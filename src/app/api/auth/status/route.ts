@@ -1,18 +1,70 @@
 import { NextResponse } from "next/server";
 import { getSessionId } from "@/lib/session";
 import { getAccounts } from "@/lib/syncService";
+import {
+  getCredentials,
+  getOrigin,
+  getRedirectUris,
+  isDevConsoleEnabled,
+  isDevRuntime,
+} from "@/lib/credentials";
 
-export async function GET() {
+export const dynamic = "force-dynamic";
+
+export async function GET(req: Request) {
   try {
     const sessionId = await getSessionId();
     const accounts = await getAccounts(sessionId);
+    const creds = await getCredentials();
+    const origin = getOrigin(req);
+    const redirectUris = getRedirectUris(origin);
+
+    const strip = (a: any) =>
+      a
+        ? {
+            id: a.id,
+            platform: a.platform,
+            accountId: a.accountId,
+            displayName: a.displayName,
+            email: a.email,
+            avatarUrl: a.avatarUrl,
+            isConnected: a.isConnected,
+            syncStatus: a.syncStatus,
+            itemCount: a.itemCount,
+            lastSyncedAt: a.lastSyncedAt,
+            product: a.product,
+            country: a.country,
+            followers: a.followers,
+            hasAccessToken: Boolean(a.accessToken),
+            hasRefreshToken: Boolean(a.refreshToken),
+            expiresAt: a.expiresAt,
+            lastError: a.lastError,
+          }
+        : null;
 
     return NextResponse.json({
       success: true,
       sessionId,
-      ...accounts,
-      hasSpotifyConfig: Boolean(process.env.SPOTIFY_CLIENT_ID),
-      hasGoogleConfig: Boolean(process.env.GOOGLE_CLIENT_ID),
+      spotify: strip(accounts.spotify),
+      youtube: strip(accounts.youtube),
+      bothConnected: accounts.bothConnected,
+      anyConnected: accounts.anyConnected,
+      credentials: {
+        spotifyReady: creds.spotifyReady,
+        googleReady: creds.googleReady,
+        spotifySource: creds.spotifySource,
+        googleSource: creds.googleSource,
+        hasYoutubeApiKey: Boolean(creds.youtubeApiKey),
+      },
+      redirectUris,
+      dev: {
+        consoleEnabled: isDevConsoleEnabled(),
+        isDevRuntime: isDevRuntime(),
+        consoleUrl: "/dev",
+      },
+      // retrocompatibilidade
+      hasSpotifyConfig: creds.spotifyReady,
+      hasGoogleConfig: creds.googleReady,
     });
   } catch (error: any) {
     console.error("Error fetching auth status:", error);

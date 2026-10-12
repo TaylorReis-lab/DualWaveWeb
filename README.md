@@ -156,24 +156,99 @@ A aplicação estará disponível em **http://localhost:3000**
 
 ---
 
-## 🔑 Configuração do OAuth Produção
+## 🔑 Login Real: Spotify e YouTube (OAuth 2.0)
+
+Quando o usuário clica em **"Entrar com Login Spotify Oficial"** ou **"Entrar com Login Google / YT Oficial"**, ele é enviado para a **tela de login oficial da plataforma**. Ao voltar, o servidor puxa e grava no banco local:
+
+| Plataforma | IDs e dados capturados |
+|---|---|
+| **Spotify** | `me.id` (ID da conta), display_name, e-mail, foto, plano (`free`/`premium`), país, seguidores, IDs de todas as playlists, IDs (`track.id`) + URI + preview de cada faixa, músicas curtidas, top faixas e tocadas recentemente |
+| **YouTube** | `sub` do Google + **`channelId`**, nome, e-mail, foto, playlist de curtidas (`LL<channelId>`), uploads, IDs de todas as playlists, `videoId` de cada item e **duração real** via `/videos?part=contentDetails` |
 
 ### Spotify Developer Dashboard
 
-1. Acesse [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard)
-2. Crie um app
-3. Adicione `http://localhost:3000/api/auth/spotify/callback` como Redirect URI
-4. Copie o Client ID e Client Secret para o `.env`
-5. Escopos solicitados: `user-read-private`, `user-read-email`, `playlist-read-private`, `playlist-read-collaborative`, `user-library-read`, `user-top-read`
+1. Acesse [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard) e crie um app
+2. Cadastre o Redirect URI **exato** mostrado no Console Dev (`/dev`):
+   - local: `http://localhost:3000/api/auth/spotify/callback`
+   - preview: `https://SEU-DOMINIO/api/auth/spotify/callback`
+3. Copie o Client ID (e o Client Secret, se quiser) para o `.env` **ou** grave pelo Console Dev
+4. Escopos solicitados: `user-read-private`, `user-read-email`, `playlist-read-private`, `playlist-read-collaborative`, `user-library-read`, `user-read-recently-played`, `user-top-read`, `user-follow-read`
+
+> 💡 **Sem Client Secret o app usa PKCE automaticamente** — ideal para desenvolvimento (cliente público).
 
 ### Google Cloud (YouTube Music)
 
-1. Acesse [console.cloud.google.com](https://console.cloud.google.com)
-2. Crie um projeto, habilite **YouTube Data API v3**
-3. Crie uma credencial OAuth 2.0 (Web Application)
-4. Adicione `http://localhost:3000/api/auth/youtube/callback` como URI de redirecionamento
-5. Copie o Client ID e Client Secret para o `.env`
-6. Escopos solicitados: `youtube.readonly`, `userinfo.profile`, `userinfo.email`
+1. Acesse [console.cloud.google.com](https://console.cloud.google.com) e crie um projeto
+2. Habilite a **YouTube Data API v3**
+3. Crie uma credencial **OAuth 2.0 (Web Application)**
+4. Cadastre o Redirect URI: `.../api/auth/youtube/callback`
+5. Copie Client ID + Client Secret para o `.env` **ou** grave pelo Console Dev
+6. Escopos: `youtube.readonly`, `userinfo.profile`, `userinfo.email`
+7. (Opcional) Crie uma **API Key** e defina `YOUTUBE_API_KEY` — ela é usada para casar automaticamente cada faixa do Spotify com o vídeo oficial correspondente no YouTube
+
+---
+
+## 🧪 Console Dev (`/dev`) — gravar dados no banco local
+
+Página e rotas exclusivas para desenvolvimento, pensadas para testar sem depender do fluxo OAuth completo.
+Desative em produção com `DISABLE_DEV_CONSOLE=true`.
+
+### Página
+
+Acesse **`/dev`** (ou clique no ícone de terminal na navbar) para:
+
+- Ver o estado do banco local (contagens de sessões, contas, playlists, faixas e buscas)
+- Ver a `DATABASE_URL` mascarada e o `NODE_ENV`
+- **Gravar credenciais OAuth no banco** (Spotify/Google/YouTube API Key) sem editar `.env` nem reiniciar
+- Copiar os Redirect URIs exatos com um clique
+- Abrir a tela de login oficial de cada plataforma
+- **Sincronizar com um token colado manualmente** (sem passar pelo OAuth)
+- Fazer seed de demonstração, inserir faixas/playlists avulsas, curtir, limpar por plataforma, zerar sessão ou zerar o banco inteiro
+
+### Rotas HTTP
+
+| Método | Rota | O que faz |
+|---|---|---|
+| `GET` | `/api/dev/db?limit=60` | Inspeciona o banco local (totais, contas com IDs reais, playlists, faixas, buscas) |
+| `POST` | `/api/dev/db` | `{action: "seed-demo" \| "insert-track" \| "insert-playlist" \| "clear-platform" \| "wipe-session" \| "wipe-all" \| "toggle-like"}` |
+| `GET` | `/api/dev/credentials` | Mostra credenciais ativas (mascaradas), origem dos valores (`env`/`db`) e Redirect URIs |
+| `POST` | `/api/dev/credentials` | **Grava as credenciais no banco local** (`app_settings`) |
+| `DELETE` | `/api/dev/credentials` | Remove as credenciais do banco (as do `.env` continuam valendo) |
+| `POST` | `/api/dev/token` | `{platform, accessToken, refreshToken?}` → roda a sincronização real e grava IDs/playlists/faixas |
+
+### Exemplos rápidos
+
+```bash
+# 1. Gravar credenciais no banco local (sem reiniciar o servidor)
+curl -X POST http://localhost:3000/api/dev/credentials \
+  -H "Content-Type: application/json" \
+  -d '{"spotifyClientId":"...","spotifyClientSecret":"...","googleClientId":"...","googleClientSecret":"...","youtubeApiKey":"..."}'
+
+# 2. Popular o banco com dados de demonstração
+curl -X POST http://localhost:3000/api/dev/db \
+  -H "Content-Type: application/json" -d '{"action":"seed-demo","platform":"both"}'
+
+# 3. Sincronizar de verdade usando um token colado manualmente
+curl -X POST http://localhost:3000/api/dev/token \
+  -H "Content-Type: application/json" \
+  -d '{"platform":"spotify","accessToken":"BQ..."}'
+
+# 4. Inserir uma faixa avulsa para testar o player
+curl -X POST http://localhost:3000/api/dev/db \
+  -H "Content-Type: application/json" \
+  -d '{"action":"insert-track","platform":"youtube","title":"Teste","artist":"Dev","youtubeVideoId":"dQw4w9WgXcQ"}'
+
+# 5. Inspecionar tudo que está no banco
+curl http://localhost:3000/api/dev/db?limit=60
+```
+
+### Prioridade das credenciais
+
+```
+variáveis de ambiente (.env)  →  valores gravados no banco (Console Dev)
+```
+
+Ou seja: se `SPOTIFY_CLIENT_ID` existir no `.env`, ele vence. Caso contrário, o valor gravado pelo Console Dev é usado — permitindo testar o login oficial sem tocar em arquivos.
 
 ---
 

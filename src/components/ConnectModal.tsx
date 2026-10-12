@@ -13,6 +13,15 @@ interface ConnectModalProps {
     anyConnected: boolean;
     hasSpotifyConfig?: boolean;
     hasGoogleConfig?: boolean;
+    credentials?: {
+      spotifyReady: boolean;
+      googleReady: boolean;
+      spotifySource: "env" | "db" | null;
+      googleSource: "env" | "db" | null;
+      hasYoutubeApiKey: boolean;
+    };
+    redirectUris?: { spotify: string; youtube: string };
+    dev?: { consoleEnabled: boolean; isDevRuntime: boolean; consoleUrl: string };
   } | null;
   onRefreshStatus: () => Promise<void>;
 }
@@ -366,6 +375,35 @@ export function ConnectModal({ isOpen, onClose, accounts, onRefreshStatus }: Con
               </div>
             </div>
           </div>
+
+          {/* Aviso sobre credenciais OAuth + atalho para o Console Dev */}
+          {(!accounts?.credentials?.spotifyReady || !accounts?.credentials?.googleReady) && (
+            <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/25 space-y-2">
+              <div className="flex items-center gap-2 text-amber-300 text-xs font-semibold">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>Credenciais OAuth não configuradas para o login oficial</span>
+              </div>
+              <p className="text-[11px] text-amber-200/80 leading-relaxed">
+                Para enviar o usuário para a tela de login real do Spotify / Google e puxar os IDs da conta, é preciso
+                informar <code className="bg-black/30 px-1 rounded">SPOTIFY_CLIENT_ID</code> e{" "}
+                <code className="bg-black/30 px-1 rounded">GOOGLE_CLIENT_ID</code> +{" "}
+                <code className="bg-black/30 px-1 rounded">GOOGLE_CLIENT_SECRET</code>. Você pode gravá-los direto no
+                banco local pelo Console Dev, sem reiniciar o servidor.
+              </p>
+              <div className="space-y-1 text-[11px] text-amber-200/70 font-mono bg-black/25 rounded-lg p-2">
+                <p className="text-amber-300/90 font-sans font-semibold mb-1">Redirect URIs para cadastrar nos painéis:</p>
+                <p className="break-all">{accounts?.redirectUris?.spotify || "/api/auth/spotify/callback"}</p>
+                <p className="break-all">{accounts?.redirectUris?.youtube || "/api/auth/youtube/callback"}</p>
+              </div>
+              <a
+                href="/dev"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500 text-black text-[11px] font-bold hover:bg-amber-400 transition-colors"
+              >
+                <span>Abrir Console Dev</span>
+                <ExternalLink className="w-3 h-3" />
+              </a>
+            </div>
+          )}
 
           {/* Privacy & Safe note */}
           <div className="flex items-start gap-2.5 p-3 rounded-xl bg-zinc-950 border border-zinc-800/80 text-[11px] text-zinc-400">

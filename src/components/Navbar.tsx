@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Search, Music, Radio, Disc3, Plus, Settings, CheckCircle2, AlertCircle, LogOut } from "lucide-react";
+import { Search, Music, Radio, Disc3, Plus, Settings, CheckCircle2, AlertCircle, LogOut, Terminal } from "lucide-react";
 
 interface NavbarProps {
   activeTab: "home" | "library" | "search" | "liked";
@@ -128,6 +128,15 @@ export function Navbar({
               </>
             )}
           </button>
+
+          {/* Console Dev */}
+          <a
+            href="/dev"
+            className="hidden sm:flex p-2 text-zinc-400 hover:text-emerald-400 bg-zinc-900 border border-zinc-800 hover:border-emerald-700/60 rounded-full transition-colors"
+            title="Console Dev (credenciais + dados no banco local)"
+          >
+            <Terminal className="w-4 h-4" />
+          </a>
 
           {/* Settings */}
           <button

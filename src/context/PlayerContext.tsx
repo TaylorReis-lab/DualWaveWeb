@@ -187,34 +187,44 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
-    // Determine playback source:
-    // If track has a youtubeVideoId, we play it via YouTube (supports full length!).
-    // If not and has previewUrl, we play preview.
-    if (track.youtubeVideoId) {
-      setPlaybackSource("youtube");
-      if (htmlAudioRef.current) {
-        htmlAudioRef.current.pause();
-      }
+    // Estratégia de reprodução:
+    // 1) youtubeVideoId  → toca o vídeo oficial (faixa completa)
+    // 2) sem videoId     → busca automática no YouTube via IFrame (listType=search)
+    // 3) sem YouTube     → preview oficial do Spotify (30s) em <audio>
+    const ytPlayer = ytPlayerRef.current;
+    const ytReady = Boolean(ytPlayer?.loadVideoById || ytPlayer?.cuePlaylist);
 
-      if (ytPlayerRef.current?.loadVideoById) {
-        try {
-          ytPlayerRef.current.loadVideoById(track.youtubeVideoId);
-          ytPlayerRef.current.playVideo();
-          setIsPlaying(true);
-        } catch (e) {
-          console.error("Failed to load video in yt player", e);
+    const startYoutube = (player: any) => {
+      try {
+        if (track.youtubeVideoId) {
+          player.loadVideoById(track.youtubeVideoId);
+        } else {
+          // Fallback poderoso: pede ao IFrame para buscar a faixa no YouTube
+          player.loadPlaylist({
+            listType: "search",
+            list: `${track.artist} ${track.title} official audio`,
+          });
         }
-      } else {
-        // Attempt lazy init if player wasn't ready
-        initYouTubePlayer();
-        setTimeout(() => {
-          try {
-            ytPlayerRef.current?.loadVideoById(track.youtubeVideoId);
-            ytPlayerRef.current?.playVideo();
-            setIsPlaying(true);
-          } catch (e) {}
-        }, 800);
+        player.playVideo?.();
+        setIsPlaying(true);
+      } catch (e) {
+        console.error("Falha ao iniciar reprodução no YouTube", e);
       }
+    };
+
+    if (ytReady) {
+      setPlaybackSource("youtube");
+      if (htmlAudioRef.current) htmlAudioRef.current.pause();
+      startYoutube(ytPlayer);
+    } else if (!track.previewUrl) {
+      // Player ainda não carregou: tenta inicializar e repete em seguida
+      setPlaybackSource("youtube");
+      initYouTubePlayer();
+      setTimeout(() => {
+        if (ytPlayerRef.current?.loadVideoById || ytPlayerRef.current?.cuePlaylist) {
+          startYoutube(ytPlayerRef.current);
+        }
+      }, 900);
     } else if (track.previewUrl) {
       setPlaybackSource("preview");
       if (ytPlayerRef.current?.pauseVideo) {

@@ -1,172 +1,94 @@
 import { NextResponse } from "next/server";
-import { getSessionId } from "@/lib/session";
+import { cookies } from "next/headers";
 import { db } from "@/db";
-import { connectedAccounts, playlists, tracks } from "@/db/schema";
+import { connectedAccounts } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
+import { getSessionId } from "@/lib/session";
+import { getCredentials, getOrigin, getRedirectUris } from "@/lib/credentials";
+import { syncYoutubeAccount } from "@/lib/platformSync";
 
+export const dynamic = "force-dynamic";
+
+/**
+ * GET /api/auth/youtube/callback
+ * Recebe o `code` da tela de login do Google, troca por access_token,
+ * puxa o channelId + playlists (inclusive "curtidas") e grava no banco local.
+ */
 export async function GET(req: Request) {
+  const origin = getOrigin(req);
+  const { youtube: redirectUri } = getRedirectUris(origin);
   const url = new URL(req.url);
   const code = url.searchParams.get("code");
   const error = url.searchParams.get("error");
+  const state = url.searchParams.get("state");
+
+  const cookieStore = await cookies();
+  const creds = await getCredentials();
   const sessionId = await getSessionId();
 
-  if (error || !code) {
-    return NextResponse.redirect(new URL("/?auth_error=" + encodeURIComponent(error || "no_code"), req.url));
-  }
+  const fail = (msg: string) =>
+    NextResponse.redirect(`${origin}/dev?error=youtube&msg=${encodeURIComponent(msg)}`);
 
-  const clientId = process.env.GOOGLE_CLIENT_ID;
-  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
-  const redirectUri = `${url.origin}/api/auth/youtube/callback`;
+  if (error) return fail(`login_cancelado_ou_negado:${error}`);
+  if (!code) return fail("code_ausente_no_callback");
 
-  if (!clientId || !clientSecret) {
-    return NextResponse.redirect(new URL("/?modal=connect_youtube&missing_creds=1", req.url));
+  const expectedState = cookieStore.get("dw_yt_state")?.value;
+  if (expectedState && state !== expectedState) return fail("state_invalido_possivel_csrf");
+
+  if (!creds.googleClientId || !creds.googleClientSecret) {
+    return fail("GOOGLE_CLIENT_ID_ou_GOOGLE_CLIENT_SECRET_nao_configurados");
   }
 
   try {
-    // Exchange token with Google
+    // 1) Troca do authorization code por tokens
     const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
         code,
-        client_id: clientId,
-        client_secret: clientSecret,
+        client_id: creds.googleClientId,
+        client_secret: creds.googleClientSecret,
         redirect_uri: redirectUri,
         grant_type: "authorization_code",
-      }),
+      }).toString(),
+      cache: "no-store",
     });
+    const tokenData = await tokenRes.json().catch(() => ({}));
 
-    const tokenData = await tokenRes.json();
     if (!tokenRes.ok || !tokenData.access_token) {
-      throw new Error(tokenData.error_description || "Falha ao obter token do Google");
+      throw new Error(
+        `troca_de_token_falhou (${tokenRes.status}): ${tokenData.error_description || tokenData.error || "desconhecido"}`
+      );
     }
 
-    const accessToken = tokenData.access_token;
-    const refreshToken = tokenData.refresh_token;
+    // 2) Sincronização completa (canal + playlists + curtidas + faixas com duração real)
+    const report = await syncYoutubeAccount(sessionId, tokenData.access_token, tokenData.refresh_token ?? null);
 
-    // Fetch user info
-    const userInfoRes = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-    const userInfo = await userInfoRes.json();
-
-    // Fetch user YouTube playlists
-    const ytPlaylistsRes = await fetch(
-      "https://www.googleapis.com/youtube/v3/playlists?part=snippet,contentDetails&mine=true&maxResults=25",
-      {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      }
-    );
-    const ytPlaylistsData = await ytPlaylistsRes.json();
-
-    let totalTracks = 0;
-
-    // Save or update account
-    const existing = await db
-      .select()
-      .from(connectedAccounts)
-      .where(and(eq(connectedAccounts.sessionId, sessionId), eq(connectedAccounts.platform, "youtube")))
-      .limit(1);
-
-    const displayName = userInfo.name || "Usuário YouTube Music";
-    const avatarUrl = userInfo.picture || "https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?w=150&auto=format&fit=crop&q=80";
-
-    if (existing.length > 0) {
+    if (report.warnings.length > 0) {
       await db
         .update(connectedAccounts)
-        .set({
-          isConnected: true,
-          accountId: userInfo.id,
-          displayName,
-          email: userInfo.email || null,
-          avatarUrl,
-          accessToken,
-          refreshToken: refreshToken || existing[0].refreshToken,
-          syncStatus: "synced",
-          lastSyncedAt: new Date(),
-        })
-        .where(eq(connectedAccounts.id, existing[0].id));
-    } else {
-      await db.insert(connectedAccounts).values({
-        sessionId,
-        platform: "youtube",
-        accountId: userInfo.id,
-        displayName,
-        email: userInfo.email || null,
-        avatarUrl,
-        accessToken,
-        refreshToken,
-        isConnected: true,
-        syncStatus: "synced",
-        lastSyncedAt: new Date(),
-      });
+        .set({ lastError: report.warnings.slice(0, 6).join(" | ").slice(0, 900) })
+        .where(
+          and(eq(connectedAccounts.sessionId, sessionId), eq(connectedAccounts.platform, "youtube"))
+        );
     }
 
-    // Save playlists & items
-    if (ytPlaylistsData.items && Array.isArray(ytPlaylistsData.items)) {
-      for (const pl of ytPlaylistsData.items) {
-        const snippet = pl.snippet;
-        const [savedPl] = await db
-          .insert(playlists)
-          .values({
-            sessionId,
-            platform: "youtube",
-            externalId: pl.id,
-            title: snippet?.title || "Playlist YouTube",
-            description: snippet?.description || "",
-            coverUrl:
-              snippet?.thumbnails?.medium?.url ||
-              snippet?.thumbnails?.default?.url ||
-              "https://images.unsplash.com/photo-1518609878373-06d740f60d8b?w=400&auto=format&fit=crop&q=80",
-            trackCount: pl.contentDetails?.itemCount || 0,
-            isPublic: true,
-          })
-          .returning();
+    cookieStore.delete("dw_yt_state");
 
-        // Fetch items
-        try {
-          const itemsRes = await fetch(
-            `https://www.googleapis.com/youtube/v3/playlistItems?part=snippet,contentDetails&playlistId=${pl.id}&maxResults=15`,
-            { headers: { Authorization: `Bearer ${accessToken}` } }
-          );
-          const itemsData = await itemsRes.json();
-          if (itemsData.items && Array.isArray(itemsData.items)) {
-            for (let i = 0; i < itemsData.items.length; i++) {
-              const item = itemsData.items[i];
-              const sn = item.snippet;
-              const videoId = sn?.resourceId?.videoId || item.contentDetails?.videoId;
-              if (!videoId) continue;
-              totalTracks++;
-              await db.insert(tracks).values({
-                sessionId,
-                playlistId: savedPl.id,
-                platform: "youtube",
-                externalId: videoId,
-                title: sn?.title || "Música YouTube",
-                artist: sn?.videoOwnerChannelTitle || sn?.channelTitle || "YouTube Artist",
-                album: snippet?.title,
-                durationSeconds: 210, // default placeholder
-                thumbnailUrl: sn?.thumbnails?.medium?.url || sn?.thumbnails?.default?.url,
-                youtubeVideoId: videoId,
-                position: i,
-              });
-            }
-          }
-        } catch (e) {
-          console.error("Error fetching playlist items for", pl.id, e);
-        }
-      }
-    }
-
-    // Update count
+    const params = new URLSearchParams({
+      connected: "youtube",
+      account: report.accountId || "",
+      playlists: String(report.playlists),
+      tracks: String(report.tracks),
+    });
+    return NextResponse.redirect(`${origin}/?${params.toString()}`);
+  } catch (err: any) {
+    console.error("[YouTube OAuth]", err);
     await db
       .update(connectedAccounts)
-      .set({ itemCount: totalTracks })
-      .where(and(eq(connectedAccounts.sessionId, sessionId), eq(connectedAccounts.platform, "youtube")));
-
-    return NextResponse.redirect(new URL("/?connected=youtube", req.url));
-  } catch (err: any) {
-    console.error("YouTube OAuth callback error:", err);
-    return NextResponse.redirect(new URL("/?auth_error=" + encodeURIComponent(err.message), req.url));
+      .set({ syncStatus: "error", lastError: String(err?.message || err).slice(0, 900) })
+      .where(and(eq(connectedAccounts.sessionId, sessionId), eq(connectedAccounts.platform, "youtube")))
+      .catch(() => undefined);
+    return fail(String(err?.message || "erro_desconhecido"));
   }
 }
