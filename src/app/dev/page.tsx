@@ -18,6 +18,7 @@ import {
   ListMusic,
   ExternalLink,
   FlaskConical,
+  X,
 } from "lucide-react";
 
 type Platform = "spotify" | "youtube";
@@ -39,9 +40,24 @@ interface DbDump {
   recentSearches: any[];
 }
 
+interface OAuthFailure {
+  platform: "spotify" | "youtube";
+  kind: string;
+  title: string;
+  cause: string;
+  redirectUri: string;
+  uris: string[];
+  steps: string[];
+  fixInDashboard: boolean;
+}
+
 interface CredsInfo {
   origin: string;
+  originSource: string;
+  browsedHost: string | null;
+  originMismatch: boolean;
   redirectUris: { spotify: string; youtube: string };
+  redirectUriCandidates: { spotify: string[]; youtube: string[] };
   credentials: {
     spotifyClientId: string | null;
     spotifyClientSecret: string | null;
@@ -73,6 +89,7 @@ export default function DevConsolePage() {
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState<{ kind: "ok" | "err" | "warn"; msg: string } | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  const [oauthFailure, setOauthFailure] = useState<OAuthFailure | null>(null);
 
   // Formulários
   const [credForm, setCredForm] = useState({
@@ -408,17 +425,127 @@ export default function DevConsolePage() {
           </div>
         </section>
 
+        {/* 1b. Diagnóstico de falha do OAuth real */}
+        {oauthFailure && (
+          <section className="bg-rose-950/30 border border-rose-800/60 rounded-2xl p-5 space-y-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-2.5">
+                <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <h2 className="text-sm font-bold text-white">{oauthFailure.title}</h2>
+                  <p className="text-xs text-zinc-300 leading-relaxed">{oauthFailure.cause}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setOauthFailure(null)}
+                className="p-1.5 text-zinc-400 hover:text-white rounded-lg hover:bg-zinc-800 shrink-0"
+                title="Fechar diagnóstico"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="grid lg:grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-rose-300">
+                  {oauthFailure.fixInDashboard ? "Cadastre esta(s) redirect URI(s)" : "Como resolver"}
+                </p>
+                {oauthFailure.uris.length > 0 ? (
+                  oauthFailure.uris.map((uri) => (
+                    <div key={uri} className="flex items-center gap-1.5">
+                      <code className="flex-1 text-[11px] text-amber-200 bg-zinc-950 border border-amber-900/50 rounded px-2 py-1.5 break-all font-mono">
+                        {uri}
+                      </code>
+                      <button
+                        onClick={() => copy("fail_uri", uri)}
+                        className="p-1.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 shrink-0"
+                        title="Copiar URI"
+                      >
+                        {copied === "fail_uri" ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
+                  ))
+                ) : (
+                  <code className="block text-[11px] text-amber-200 bg-zinc-950 border border-amber-900/50 rounded px-2 py-1.5 break-all font-mono">
+                    {oauthFailure.redirectUri || "indisponível"}
+                  </code>
+                )}
+                <p className="text-[11px] text-zinc-400 leading-relaxed">
+                  Copie e cole no painel do provedor — não digite à mão. “localhost” e “127.0.0.1” são URIs{" "}
+                  <strong className="text-zinc-200">diferentes</strong> para Spotify e Google.
+                </p>
+              </div>
+
+              <div className="space-y-1.5">
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-rose-300">Passo a passo</p>
+                <ol className="space-y-1.5 list-decimal list-inside text-[11px] text-zinc-300">
+                  {oauthFailure.steps.map((step, index) => (
+                    <li key={index} className="leading-relaxed">
+                      {step}
+                    </li>
+                  ))}
+                </ol>
+                {oauthFailure.platform === "spotify" ? (
+                  <a
+                    href="https://developer.spotify.com/dashboard"
+                    target="_blank"
+                    rel="noreferrer"
+                    className={btnPrimary + " mt-1"}
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" /> Abrir Spotify Dashboard
+                  </a>
+                ) : (
+                  <a
+                    href="https://console.cloud.google.com/apis/credentials"
+                    target="_blank"
+                    rel="noreferrer"
+                    className={btnPrimary + " mt-1"}
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" /> Abrir Google Cloud Credenciais
+                  </a>
+                )}
+              </div>
+            </div>
+          </section>
+        )}
+
         {/* 2. Credenciais OAuth */}
         <section className="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-5 space-y-4">
           <h2 className="text-sm font-bold flex items-center gap-2">
             <KeyRound className="w-4 h-4 text-amber-400" /> Credenciais OAuth (gravadas no banco local)
           </h2>
 
+          {/* Origem efetiva usada nos redirect URIs */}
+          <div className="p-3 rounded-xl bg-zinc-950 border border-zinc-800 text-[11px] space-y-1">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <span className="text-zinc-400">Origem usada nas URIs:</span>
+              <code className="text-emerald-400 font-mono">{creds?.origin || "..."}</code>
+              <span className="text-zinc-600">
+                (fonte: {creds?.originSource || "?"})
+              </span>
+            </div>
+            {creds?.browsedHost && (
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <span className="text-zinc-400">Endereço acessado agora:</span>
+                <code className="text-zinc-200 font-mono">{creds.browsedHost}</code>
+              </div>
+            )}
+            {creds?.originMismatch && (
+              <p className="text-amber-300 leading-relaxed pt-1">
+                Você está acessando por um endereço diferente do usado nas URIs acima. Para o login real funcionar,
+                cadastre as URIs exibidas abaixo <strong>e</strong> abra o app pelo mesmo endereço — ou defina{" "}
+                <code className="bg-zinc-800 px-1 rounded">OAUTH_REDIRECT_ORIGIN</code> /{" "}
+                <code className="bg-zinc-800 px-1 rounded">NEXT_PUBLIC_APP_URL</code> com essa origem.
+              </p>
+            )}
+          </div>
+
           <div className="grid sm:grid-cols-2 gap-3">
             {(["spotify", "youtube"] as Platform[]).map((p) => {
               const ready = p === "spotify" ? spotifyReady : googleReady;
               const source = p === "spotify" ? creds?.credentials.spotifySource : creds?.credentials.googleSource;
               const uri = p === "spotify" ? creds?.redirectUris.spotify : creds?.redirectUris.youtube;
+              const candidates = p === "spotify" ? creds?.redirectUriCandidates.spotify : creds?.redirectUriCandidates.youtube;
               return (
                 <div key={p} className="bg-zinc-950 border border-zinc-800 rounded-xl p-3 space-y-2">
                   <div className="flex items-center justify-between">

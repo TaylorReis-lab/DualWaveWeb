@@ -264,6 +264,10 @@ async function main() {
   if (["build", "start"].includes(command)) process.env.NODE_ENV = "production";
   else if (!process.env.NODE_ENV) process.env.NODE_ENV = "development";
   await loadEnvironment();
+  // Apenas para exibição no console. NÃO alimenta os redirect URIs do OAuth:
+  // a origem real vem do host acessado pelo navegador, pois Spotify e Google
+  // tratam "localhost" e "127.0.0.1" como redirect URIs diferentes.
+  // Para fixar uma origem, defina NEXT_PUBLIC_APP_URL ou OAUTH_REDIRECT_ORIGIN.
   if (!process.env.APP_URL) process.env.APP_URL = `http://127.0.0.1:${appPort()}`;
 
   switch (command) {

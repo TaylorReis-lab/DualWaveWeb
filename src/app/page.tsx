@@ -49,6 +49,9 @@ function MainLayout() {
       hasYoutubeApiKey: boolean;
     };
     redirectUris?: { spotify: string; youtube: string };
+    redirectUriCandidates?: { spotify: string[]; youtube: string[] };
+    browsedHost?: string | null;
+    originMismatch?: boolean;
     dev?: { consoleEnabled: boolean; isDevRuntime: boolean; consoleUrl: string };
   } | null>(null);
 

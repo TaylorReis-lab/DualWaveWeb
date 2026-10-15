@@ -25,7 +25,7 @@ config({ path: [`.env.${mode}.local`, ".env.local", `.env.${mode}`, ".env"], qui
 const baseUrl = (process.env.DUALWAVE_URL || "http://127.0.0.1:3000").replace(/\/$/, "");
 const sessionId = `devtest_${Date.now().toString(36)}_${randomBytes(5).toString("hex")}`;
 const jar = { duo_music_session: sessionId };
-let smokeEmail = "dev@dualwave.com";
+let smokeEmail = null;
 const passed = [];
 
 function storeCookies(response) {

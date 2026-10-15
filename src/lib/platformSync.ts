@@ -457,6 +457,23 @@ export async function syncYoutubeAccount(
   let playlistCount = 0;
   let likedCount = 0;
 
+  /**
+   * Deduplica por MÚSICA, não por texto: normaliza título/artista e
+   * ignora variações de duração/case/acentos. Assim, a mesma música que
+   * já veio do Spotify não é duplicada quando vem do YouTube.
+   */
+  const musicKey = (title: string, artist: string) =>
+    `${artist} ${title}`
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, " ")
+      .replace(/\b(official|audio|video|music|lyric|lyrics|clip|hd|ft|feat|oficial)\b/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+  const seenMusic = new Set<string>();
+
   /** Busca os metadados (duração real + thumbnail) de um lote de videoIds. */
   const fetchVideoMeta = async (videoIds: string[]) => {
     const out = new Map<string, { durationSeconds: number; thumbnailUrl: string | null; artist: string }>();
@@ -516,13 +533,19 @@ export async function syncYoutubeAccount(
       const sn = item.snippet || {};
       const m = meta.get(videoId);
 
+      const artist = m?.artist || sn.videoOwnerChannelTitle || sn.channelTitle || displayName;
+      const title = sn.title || "Vídeo do YouTube";
+      const key = musicKey(title, artist);
+      if (key && seenMusic.has(key)) continue; // mesma música já vinda do Spotify
+      if (key) seenMusic.add(key);
+
       await db.insert(tracks).values({
         sessionId,
         playlistId: playlistRowId,
         platform: "youtube",
         externalId: videoId,
-        title: sn.title || "Vídeo do YouTube",
-        artist: m?.artist || sn.videoOwnerChannelTitle || sn.channelTitle || displayName,
+        title,
+        artist,
         album: null,
         durationSeconds: m?.durationSeconds ?? 0,
         thumbnailUrl:

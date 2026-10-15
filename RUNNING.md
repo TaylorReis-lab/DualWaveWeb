@@ -151,6 +151,14 @@ O `.env` existente não é substituído pelo modelo. A única rotação automát
 - Cadastre o callback **exato** do ambiente no Spotify Developer Dashboard e no Google Cloud.
 - Em loopback, prefira `http://127.0.0.1:3000/api/auth/spotify/callback`; no domínio publicado, use HTTPS.
 - Cada usuário registra sua própria senha DualWave e conecta suas plataformas pelas telas oficiais. Não configure senhas Spotify/Google no `.env`.
+
+#### Como a origem do redirect URI é escolhida
+
+A ordem é: `OAUTH_REDIRECT_ORIGIN` → `NEXT_PUBLIC_APP_URL` → **endereço acessado no navegador** (`Host`/`x-forwarded-host`) → `APP_URL` → `http://localhost:3000`.
+
+Em desenvolvimento, o app usa o endereço digitado no navegador. Abrindo por `localhost:3000` as URIs ficam `http://localhost:3000/...`; por `127.0.0.1:3000` ficam `http://127.0.0.1:3000/...`. Como os provedores as tratam como diferentes, o mais simples é **cadastrar as duas variantes** — elas aparecem prontas em `/dev`.
+
+Quando o login real falhar, o app volta ao `/dev` com um painel vermelho mostrando a causa, a URI exata enviada e o passo a passo. Atrás de proxy, confirme `x-forwarded-proto` e `x-forwarded-host`; para fixar uma origem, use `NEXT_PUBLIC_APP_URL`.
 - O valor privado de `DEV_SIGNUP_CODE` está no seu `.env` gerado. Use-o no registro dev; não há conta administrativa com senha universal pré-criada.
 - Os usuários, bibliotecas e refresh tokens ficam no PostgreSQL; preservar o volume preserva esses dados. Login e `/api/auth/me` verificam a expiração e tentam renovar os tokens OAuth.
 
@@ -234,7 +242,7 @@ Não restaure por cima de dados em uso sem um plano revisado. O SQL de backup co
 | `DATABASE_URL` inválida | Confira o arquivo efetivo `.env.local`/`.env` e a codificação da senha na URL |
 | Autenticação PostgreSQL falhou após mudar a senha | Variáveis de inicialização só valem em volume novo; atualize o usuário com procedimento administrativo ou crie um banco separado sem apagar o antigo |
 | `relation already exists` ao migrar | O banco foi criado com `push` e precisa de baseline; não destrua dados para forçar migrations |
-| Login OAuth recusa redirect | Cadastre exatamente a URI de origem/porta/domínio mostrada pelo app e confira `APP_URL` |
+| **`redirect_uri: Not matching configuration`** (Spotify) ou **`redirect_uri_mismatch`** (Google) | A URI enviada não está cadastrada. Abra `/dev`, copie as URIs exatas do painel vermelho de diagnóstico e cadastre **todas** no painel do provedor. `localhost` e `127.0.0.1` são URIs diferentes, e porta/barra final também contam. Salve, aguarde até 5 minutos e tente de novo |
 | Testes respondem 403 no `/api/dev/*` | Você está no modo de produção/Console Dev bloqueado; execute testes no ambiente de desenvolvimento |
 | Atualização não aparece | Reexecute `docker:up` para rebuild ou atualize dependências e reinicie o app local |
 

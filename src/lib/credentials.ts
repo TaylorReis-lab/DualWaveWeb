@@ -31,36 +31,118 @@ export function isDevRuntime(): boolean {
 }
 
 /**
- * Descobre a origem PÚBLICA da aplicação (importante atrás de proxy/preview).
- * Ordem: NEXT_PUBLIC_APP_URL → x-forwarded-host/proto → URL da requisição → localhost.
- * O redirect URI do OAuth precisa bater EXATAMENTE com o cadastrado nos painéis.
+ * Normaliza uma origem para a forma canônica usada nos redirect URIs.
+ * Spotify e Google comparam a URI caractere por caractere, então detalhes como
+ * "localhost" vs "127.0.0.1", porta padrão explícita ou barra final causam o erro
+ * "redirect_uri: Not matching configuration" / "redirect_uri_mismatch".
  */
-export function getOrigin(req?: Request): string {
-  const fromEnv = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL;
-  if (fromEnv) return fromEnv.replace(/\/$/, "");
+export function normalizeOrigin(input: string): string | null {
+  const raw = input.trim();
+  if (!raw) return null;
+  try {
+    const url = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(raw) ? raw : `http://${raw}`);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
 
-  if (req) {
-    const h = req.headers;
-    const proto = (h.get("x-forwarded-proto") || "").split(",")[0].trim() || "http";
-    const forwardedHost = (h.get("x-forwarded-host") || "").split(",")[0].trim();
-    const hostHeader = (h.get("host") || "").split(",")[0].trim();
-    const candidate = forwardedHost || hostHeader;
+    let host = url.hostname.toLowerCase().replace(/\.$/, "");
+    const port = url.port;
 
-    if (candidate && !candidate.startsWith("0.0.0.0") && !candidate.startsWith("127.0.0.1")) {
-      return `${proto}://${candidate}`;
-    }
+    // Remove a porta padrão do protocolo; provedores não a esperam na URI.
+    const isDefaultPort = (url.protocol === "https:" && port === "443") || (url.protocol === "http:" && port === "80");
+    const normalizedPort = isDefaultPort ? "" : port;
 
-    const urlOrigin = new URL(req.url).origin;
-    if (!urlOrigin.includes("0.0.0.0") && !urlOrigin.includes("127.0.0.1")) return urlOrigin;
+    // Endereços de escuta do Docker/Node não são acessíveis pelo navegador.
+    if (!host || host === "0.0.0.0" || host === "[::]" || host === "::") return null;
+
+    return `${url.protocol}//${host}${normalizedPort ? `:${normalizedPort}` : ""}`;
+  } catch {
+    return null;
   }
-
-  return "http://localhost:3000";
 }
 
+export interface OriginResolution {
+  origin: string;
+  /** Qual fonte definiu a origem — útil para diagnosticar o mismatch. */
+  source: "oauth_override" | "public_env" | "request_host" | "app_url" | "default";
+  /** Host que o navegador realmente usou nesta requisição, quando disponível. */
+  browsedHost: string | null;
+}
+
+/**
+ * Descobre a origem PÚBLICA da aplicação.
+ *
+ * Ordem: OAUTH_REDIRECT_ORIGIN → NEXT_PUBLIC_APP_URL → host da requisição →
+ * APP_URL (último recurso, sem cabeçalhos) → localhost.
+ *
+ * O host da requisição tem prioridade sobre APP_URL porque, em loopback, o app
+ * iniciado por run-local define APP_URL=http://127.0.0.1:3000 enquanto o usuário
+ * pode estar acessando por http://localhost:3000 — e os provedores tratam os dois
+ * como redirect URIs DIFERENTES.
+ */
+export function resolveOrigin(req?: Request): OriginResolution {
+  const override = normalizeOrigin(process.env.OAUTH_REDIRECT_ORIGIN || "");
+  if (override) return { origin: override, source: "oauth_override", browsedHost: browsedHostOf(req) };
+
+  const publicEnv = normalizeOrigin(process.env.NEXT_PUBLIC_APP_URL || "");
+  if (publicEnv) return { origin: publicEnv, source: "public_env", browsedHost: browsedHostOf(req) };
+
+  if (req) {
+    const proto = (req.headers.get("x-forwarded-proto") || "").split(",")[0].trim() || "http";
+    const forwardedHost = (req.headers.get("x-forwarded-host") || "").split(",")[0].trim();
+    const hostHeader = (req.headers.get("host") || "").split(",")[0].trim();
+    const candidate = forwardedHost || hostHeader;
+
+    const fromHeaders = candidate ? normalizeOrigin(`${proto}://${candidate}`) : null;
+    if (fromHeaders) return { origin: fromHeaders, source: "request_host", browsedHost: candidate };
+
+    const fromUrl = normalizeOrigin(new URL(req.url).origin);
+    if (fromUrl) return { origin: fromUrl, source: "request_host", browsedHost: candidate };
+  }
+
+  const appUrl = normalizeOrigin(process.env.APP_URL || "");
+  if (appUrl) return { origin: appUrl, source: "app_url", browsedHost: browsedHostOf(req) };
+
+  return { origin: "http://localhost:3000", source: "default", browsedHost: browsedHostOf(req) };
+}
+
+function browsedHostOf(req?: Request): string | null {
+  if (!req) return null;
+  const forwardedHost = (req.headers.get("x-forwarded-host") || "").split(",")[0].trim();
+  const hostHeader = (req.headers.get("host") || "").split(",")[0].trim();
+  return forwardedHost || hostHeader || null;
+}
+
+/**
+ * Origem usada nos redirect URIs. Mantida para compatibilidade com as rotas OAuth.
+ */
+export function getOrigin(req?: Request): string {
+  return resolveOrigin(req).origin;
+}
+
+/** URIs exatos que precisam estar cadastrados no Spotify / Google Cloud. */
 export function getRedirectUris(origin: string) {
   return {
     spotify: `${origin}/api/auth/spotify/callback`,
     youtube: `${origin}/api/auth/youtube/callback`,
+  };
+}
+
+/**
+ * Todas as variantes de loopback que vale cadastrar de uma vez, para o login
+ * funcionar por "localhost" E por "127.0.0.1" (os provedores as diferenciam).
+ * Para domínios não-loopback, só há a variante própria.
+ */
+export function getRedirectUriCandidates(origin: string) {
+  const urls = new URL(origin);
+  const host = urls.hostname.toLowerCase();
+  const isLoopback = host === "localhost" || host === "127.0.0.1" || host === "[::1]" || host === "::1";
+  const portSuffix = urls.port ? `:${urls.port}` : "";
+  const loopbackHosts = isLoopback ? ["localhost", "127.0.0.1"] : [host];
+
+  const bases = loopbackHosts.map((candidate) => `${urls.protocol}//${candidate}${portSuffix}`);
+
+  return {
+    spotify: bases.map((base) => `${base}/api/auth/spotify/callback`),
+    youtube: bases.map((base) => `${base}/api/auth/youtube/callback`),
   };
 }
 

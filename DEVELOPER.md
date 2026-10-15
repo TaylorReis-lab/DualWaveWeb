@@ -1,5 +1,10 @@
 # 👨‍💻 DEVELOPER.md — Guia do Desenvolvedor Principal
 
+> Este arquivo é **seu** espaço pessoal como mantenedor do DualWave.  
+> Aqui você encontrará anotações técnicas, roadmap, pontos de extensão, ideias de features, e orientações para continuar evoluindo o projeto open source.
+
+---
+
 ## 🎯 Visão do Mantenedor
 
 O DualWave já é um MVP funcional e completo, com autenticação (real e sandbox), biblioteca sincronizada, player global, busca multi-plataforma e playlists híbridas. A partir daqui, o céu é o limite.

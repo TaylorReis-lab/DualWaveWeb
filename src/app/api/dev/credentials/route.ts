@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import {
   getCredentials,
-  getOrigin,
+  getRedirectUriCandidates,
   getRedirectUris,
   isDevConsoleEnabled,
   maskSecret,
+  resolveOrigin,
   saveDevCredentials,
   DEV_CREDENTIALS_KEY,
 } from "@/lib/credentials";
@@ -32,14 +33,24 @@ export async function GET(req: Request) {
   const blocked = guard();
   if (blocked) return blocked;
 
-  const origin = getOrigin(req);
+  const resolution = resolveOrigin(req);
+  const origin = resolution.origin;
   const uris = getRedirectUris(origin);
   const creds = await getCredentials();
 
   return NextResponse.json({
     success: true,
     origin,
+    originSource: resolution.source,
+    browsedHost: resolution.browsedHost,
+    /** Aviso quando o endereço acessado difere do usado nos redirect URIs. */
+    originMismatch:
+      resolution.browsedHost
+        ? resolution.browsedHost.split(":")[0].toLowerCase() !== new URL(origin).hostname.toLowerCase()
+        : false,
     redirectUris: uris,
+    /** Registre todas as variantes no painel para o login funcionar por localhost e 127.0.0.1. */
+    redirectUriCandidates: getRedirectUriCandidates(origin),
     credentials: {
       spotifyClientId: creds.spotifyClientId ? maskSecret(creds.spotifyClientId) : null,
       spotifyClientSecret: maskSecret(creds.spotifyClientSecret),

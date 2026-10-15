@@ -5,10 +5,11 @@ import { getCurrentUser, sanitizeUser } from "@/lib/auth";
 import { getSessionTokenHealth } from "@/lib/tokenRefresh";
 import {
   getCredentials,
-  getOrigin,
+  getRedirectUriCandidates,
   getRedirectUris,
   isDevConsoleEnabled,
   isDevRuntime,
+  resolveOrigin,
 } from "@/lib/credentials";
 
 export const dynamic = "force-dynamic";
@@ -18,8 +19,10 @@ export async function GET(req: Request) {
     const sessionId = await getSessionId();
     const accounts = await getAccounts(sessionId);
     const creds = await getCredentials();
-    const origin = getOrigin(req);
+    const resolution = resolveOrigin(req);
+    const origin = resolution.origin;
     const redirectUris = getRedirectUris(origin);
+    const redirectUriCandidates = getRedirectUriCandidates(origin);
     const user = await getCurrentUser();
     const tokenHealth = await getSessionTokenHealth(sessionId);
 
@@ -63,6 +66,12 @@ export async function GET(req: Request) {
         hasYoutubeApiKey: Boolean(creds.youtubeApiKey),
       },
       redirectUris,
+      redirectUriCandidates,
+      originSource: resolution.source,
+      browsedHost: resolution.browsedHost,
+      originMismatch: resolution.browsedHost
+        ? resolution.browsedHost.split(":")[0].toLowerCase() !== new URL(origin).hostname.toLowerCase()
+        : false,
       dev: {
         consoleEnabled: isDevConsoleEnabled(),
         isDevRuntime: isDevRuntime(),

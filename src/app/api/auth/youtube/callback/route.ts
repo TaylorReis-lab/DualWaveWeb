@@ -4,8 +4,9 @@ import { db } from "@/db";
 import { connectedAccounts } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 import { getSessionId } from "@/lib/session";
-import { getCredentials, getOrigin, getRedirectUris } from "@/lib/credentials";
+import { getCredentials, resolveOrigin, getRedirectUris } from "@/lib/credentials";
 import { syncYoutubeAccount } from "@/lib/platformSync";
+import { oauthFailureRedirect } from "@/lib/oauthDiagnostics";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +16,7 @@ export const dynamic = "force-dynamic";
  * puxa o channelId + playlists (inclusive "curtidas") e grava no banco local.
  */
 export async function GET(req: Request) {
-  const origin = getOrigin(req);
+  const { origin } = resolveOrigin(req);
   const { youtube: redirectUri } = getRedirectUris(origin);
   const url = new URL(req.url);
   const code = url.searchParams.get("code");
@@ -26,8 +27,8 @@ export async function GET(req: Request) {
   const creds = await getCredentials();
   const sessionId = await getSessionId();
 
-  const fail = (msg: string) =>
-    NextResponse.redirect(`${origin}/dev?error=youtube&msg=${encodeURIComponent(msg)}`);
+  // Toda falha volta ao Console Dev com a URI exata e o passo a passo.
+  const fail = (msg: string) => oauthFailureRedirect(req, "youtube", msg);
 
   if (error) return fail(`login_cancelado_ou_negado:${error}`);
   if (!code) return fail("code_ausente_no_callback");
@@ -77,13 +78,14 @@ export async function GET(req: Request) {
 
     cookieStore.delete("dw_yt_state");
 
+    // Página de extração: mostra a resposta oficial e o que foi puxado.
     const params = new URLSearchParams({
-      connected: "youtube",
+      platform: "youtube",
       account: report.accountId || "",
       playlists: String(report.playlists),
       tracks: String(report.tracks),
     });
-    return NextResponse.redirect(`${origin}/?${params.toString()}`);
+    return NextResponse.redirect(`${origin}/login/extract?${params.toString()}`);
   } catch (err: any) {
     console.error("[YouTube OAuth]", err);
     await db

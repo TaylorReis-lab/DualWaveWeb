@@ -367,10 +367,30 @@ export async function searchTracksAndPlaylists(
     );
   });
 
-  // Combine and deduplicate
+  // Dedup real por MÚSICA, não por texto: normaliza título/artista e
+  // ignora variações de duração/case/acentos. Assim a mesma música vinda
+  // do Spotify e do YouTube aparece UMA vez só.
+  const musicKey = (title: string, artist: string) =>
+    `${artist} ${title}`
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, " ")
+      .replace(/\b(official|audio|video|music|lyric|lyrics|clip|hd|ft|feat|oficial)\b/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
   const combinedTracksMap = new Map<string, any>();
 
-  // Add db tracks matching
+  const addTrack = (t: any) => {
+    const key = musicKey(t.title || "", t.artist || "");
+    if (!key) return;
+    if (!combinedTracksMap.has(key)) {
+      combinedTracksMap.set(key, t);
+    }
+  };
+
+  // 1) Faixas do banco local
   for (const t of allDbTracks) {
     if (
       t.title.toLowerCase().includes(q) ||
@@ -378,35 +398,32 @@ export async function searchTracksAndPlaylists(
       (t.album && t.album.toLowerCase().includes(q))
     ) {
       if (platformFilter === "all" || t.platform === platformFilter) {
-        combinedTracksMap.set(`${t.platform}_${t.title}_${t.artist}`.toLowerCase(), t);
+        addTrack(t);
       }
     }
   }
 
-  // Add catalog matches
+  // 2) Catálogo mock global
   for (const c of catalogMatches) {
     if (platformFilter === "all" || c.platform === platformFilter) {
-      const key = `${c.platform}_${c.title}_${c.artist}`.toLowerCase();
-      if (!combinedTracksMap.has(key)) {
-        combinedTracksMap.set(key, {
-          id: -Math.floor(Math.random() * 100000) - 1, // temporary mock id
-          sessionId,
-          playlistId: null,
-          platform: c.platform,
-          externalId: c.externalId,
-          title: c.title,
-          artist: c.artist,
-          album: c.album,
-          durationSeconds: c.durationSeconds,
-          thumbnailUrl: c.thumbnailUrl,
-          previewUrl: c.previewUrl || null,
-          youtubeVideoId: c.youtubeVideoId,
-          spotifyUri: c.spotifyUri || null,
-          isLiked: c.isLiked ?? false,
-          playsCount: 0,
-          position: 0,
-        });
-      }
+      addTrack({
+        id: -Math.floor(Math.random() * 100000) - 1, // temporary mock id
+        sessionId,
+        playlistId: null,
+        platform: c.platform,
+        externalId: c.externalId,
+        title: c.title,
+        artist: c.artist,
+        album: c.album,
+        durationSeconds: c.durationSeconds,
+        thumbnailUrl: c.thumbnailUrl,
+        previewUrl: c.previewUrl || null,
+        youtubeVideoId: c.youtubeVideoId,
+        spotifyUri: c.spotifyUri || null,
+        isLiked: c.isLiked ?? false,
+        playsCount: 0,
+        position: 0,
+      });
     }
   }
 

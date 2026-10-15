@@ -21,6 +21,9 @@ interface ConnectModalProps {
       hasYoutubeApiKey: boolean;
     };
     redirectUris?: { spotify: string; youtube: string };
+    redirectUriCandidates?: { spotify: string[]; youtube: string[] };
+    browsedHost?: string | null;
+    originMismatch?: boolean;
     dev?: { consoleEnabled: boolean; isDevRuntime: boolean; consoleUrl: string };
   } | null;
   onRefreshStatus: () => Promise<void>;
@@ -390,11 +393,39 @@ export function ConnectModal({ isOpen, onClose, accounts, onRefreshStatus }: Con
                 <code className="bg-black/30 px-1 rounded">GOOGLE_CLIENT_SECRET</code>. Você pode gravá-los direto no
                 banco local pelo Console Dev, sem reiniciar o servidor.
               </p>
-              <div className="space-y-1 text-[11px] text-amber-200/70 font-mono bg-black/25 rounded-lg p-2">
-                <p className="text-amber-300/90 font-sans font-semibold mb-1">Redirect URIs para cadastrar nos painéis:</p>
-                <p className="break-all">{accounts?.redirectUris?.spotify || "/api/auth/spotify/callback"}</p>
-                <p className="break-all">{accounts?.redirectUris?.youtube || "/api/auth/youtube/callback"}</p>
+              <div className="space-y-1.5 text-[11px] font-mono bg-black/25 rounded-lg p-2">
+                <p className="text-amber-300/90 font-sans font-semibold">
+                  Cadastre TODAS as URIs abaixo (localhost e 127.0.0.1 são diferentes):
+                </p>
+                {(accounts?.redirectUriCandidates?.spotify || [accounts?.redirectUris?.spotify || "/api/auth/spotify/callback"]).map(
+                  (uri) => (
+                    <p key={uri} className="break-all text-amber-100/90">
+                      {uri}
+                    </p>
+                  )
+                )}
+                {(accounts?.redirectUriCandidates?.youtube || [accounts?.redirectUris?.youtube || "/api/auth/youtube/callback"]).map(
+                  (uri) => (
+                    <p key={uri} className="break-all text-amber-100/90">
+                      {uri}
+                    </p>
+                  )
+                )}
               </div>
+              {accounts?.browsedHost && (
+                <p className="text-[11px] text-amber-200/70">
+                  Você está acessando por <code className="bg-black/30 px-1 rounded">{accounts.browsedHost}</code>. Se essa
+                  não for a origem das URIs acima, abra o app por ela ou defina{" "}
+                  <code className="bg-black/30 px-1 rounded">NEXT_PUBLIC_APP_URL</code>.
+                </p>
+              )}
+              <a
+                href="/dev"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500 text-black text-[11px] font-bold hover:bg-amber-400 transition-colors"
+              >
+                <span>Abrir Console Dev</span>
+                <ExternalLink className="w-3 h-3" />
+              </a>
               <a
                 href="/dev"
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500 text-black text-[11px] font-bold hover:bg-amber-400 transition-colors"
